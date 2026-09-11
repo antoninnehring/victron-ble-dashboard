@@ -22,6 +22,7 @@ VICTRON_COMPANY_ID = 0x02E1
 STALE_AFTER_S = 120
 EMPTY_CYCLES_BEFORE_RESTART = 8
 PERIODIC_RESTART_S = 15 * 60
+SCANNER_OP_TIMEOUT = 20
 
 
 def parse_kv_list(raw: str) -> dict:
@@ -64,7 +65,10 @@ def load_history():
 
 
 def save_history(history):
-    HISTORY_FILE.write_text(json.dumps(history, indent=2))
+    try:
+        HISTORY_FILE.write_text(json.dumps(history, indent=2))
+    except OSError as exc:
+        print(f"  History write failed: {exc}")
 
 
 def update_daily_history(history, device_data, interval_s=15):
@@ -261,6 +265,7 @@ class VictronBLEReader:
         self.device_data: dict[str, dict] = {}
         self.device_names: dict[str, str] = {}
         self.last_update: dict[str, float] = {}
+        self.heard_after_start = False
         self.history = load_history()
 
     def newest_seen_age(self) -> float:
@@ -302,6 +307,7 @@ class VictronBLEReader:
                 self.device_data[addr] = {}
             self.device_data[addr].update(extracted)
             self.last_update[addr] = time.time()
+            self.heard_after_start = True
         except Exception as exc:
             print(f"  Callback error: {exc}")
 
@@ -371,7 +377,8 @@ class VictronBLEReader:
 
     def write_data(self):
         merged = self.get_merged_data()
-        self.history = update_daily_history(self.history, merged)
+        if not self.devices_are_stale():
+            self.history = update_daily_history(self.history, merged)
 
         daily_stats = []
         for day_date in sorted(self.history["days"].keys()):
@@ -428,9 +435,14 @@ class VictronBLEReader:
         if scanner is None:
             return
         try:
-            await scanner.stop()
+            await asyncio.wait_for(scanner.stop(), timeout=SCANNER_OP_TIMEOUT)
         except Exception:
             pass
+
+    def _backoff(self, failures: int) -> float:
+        if failures <= 0:
+            return 0
+        return min(30, 2 ** min(failures, 4))
 
     async def _start_scanner(self, reason: str, backoff: float = 0):
         ts = datetime.now().strftime("%H:%M:%S")
@@ -440,7 +452,12 @@ class VictronBLEReader:
         else:
             print(f"[{ts}] Starting BLE scanner ({reason})...")
         scanner = BleakScanner(detection_callback=self.detection_callback)
-        await scanner.start()
+        try:
+            await asyncio.wait_for(scanner.start(), timeout=SCANNER_OP_TIMEOUT)
+        except Exception:
+            await self._stop_scanner(scanner)
+            raise
+        self.heard_after_start = False
         return scanner
 
     async def run(self):
@@ -451,48 +468,76 @@ class VictronBLEReader:
         scanner = None
         empty_cycles = 0
         failures = 0
-        last_restart = time.time()
+        last_restart = 0.0
 
         try:
-            scanner = await self._start_scanner("initial")
             while True:
                 try:
-                    loop_start = time.time()
-                    await asyncio.sleep(interval)
-                    elapsed = time.time() - loop_start
                     ts = datetime.now().strftime("%H:%M:%S")
                     reason = None
-
-                    if elapsed > interval * 3:
-                        reason = f"wake/gap {elapsed:.0f}s"
-                    elif not self.device_data or self.devices_are_stale():
+                    if scanner is None:
+                        reason = "not running"
+                    elif (
+                        not self.heard_after_start
+                        or not self.device_data
+                        or self.devices_are_stale()
+                    ):
                         empty_cycles += 1
                         if empty_cycles >= EMPTY_CYCLES_BEFORE_RESTART:
                             reason = f"{empty_cycles} empty/stale cycles"
                     else:
                         empty_cycles = 0
 
-                    if reason is None and time.time() - last_restart >= PERIODIC_RESTART_S:
+                    if (
+                        reason is None
+                        and last_restart
+                        and time.time() - last_restart >= PERIODIC_RESTART_S
+                    ):
                         reason = "periodic"
 
                     if reason:
                         await self._stop_scanner(scanner)
-                        backoff = min(30, 2 ** min(failures, 4)) if failures else 0
+                        scanner = None
                         try:
-                            scanner = await self._start_scanner(reason, backoff)
+                            scanner = await self._start_scanner(
+                                reason, self._backoff(failures)
+                            )
                             failures = 0
                             empty_cycles = 0
                             last_restart = time.time()
                         except Exception as exc:
                             failures += 1
-                            scanner = None
                             print(f"[{ts}] Scanner start failed: {exc}")
+                            await asyncio.sleep(self._backoff(failures))
                             continue
+
+                    loop_start = time.time()
+                    await asyncio.sleep(interval)
+                    elapsed = time.time() - loop_start
+                    ts = datetime.now().strftime("%H:%M:%S")
+
+                    if elapsed > interval * 3:
+                        print(
+                            f"[{ts}] Wake detected ({elapsed:.0f}s gap), "
+                            "restarting BLE scanner..."
+                        )
+                        await self._stop_scanner(scanner)
+                        scanner = None
+                        try:
+                            scanner = await self._start_scanner(
+                                f"wake/gap {elapsed:.0f}s"
+                            )
+                            failures = 0
+                            empty_cycles = 0
+                            last_restart = time.time()
+                        except Exception as exc:
+                            failures += 1
+                            print(f"[{ts}] Scanner start failed: {exc}")
 
                     if self.device_data:
                         try:
                             self.write_data()
-                        except OSError as exc:
+                        except Exception as exc:
                             print(f"[{ts}] Write failed (keeping last file): {exc}")
                         merged = self.get_merged_data()
                         soc = merged["battery"]["soc"]
@@ -515,14 +560,8 @@ class VictronBLEReader:
                     ts = datetime.now().strftime("%H:%M:%S")
                     print(f"[{ts}] BLE loop error: {exc}")
                     await self._stop_scanner(scanner)
-                    try:
-                        scanner = await self._start_scanner(
-                            "after error", min(30, 2 ** min(failures, 4))
-                        )
-                        last_restart = time.time()
-                    except Exception as start_exc:
-                        scanner = None
-                        print(f"[{ts}] Scanner restart failed: {start_exc}")
+                    scanner = None
+                    await asyncio.sleep(self._backoff(failures))
         except KeyboardInterrupt:
             print("\nStopping...")
         finally:
