@@ -1,0 +1,53 @@
+# Secrets and local env
+.env
+.env.*
+!.env.example
+!**/.env.example
+!.env.*.example
+
+# BLE runtime data
+ble-data.json
+ble-history.json
+*.json.tmp
+**/ble-data.json
+**/ble-history.json
+
+# Node / Next.js
+node_modules/
+.next/
+out/
+build/
+coverage/
+*.tsbuildinfo
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+.vercel
+
+# Swift / Xcode
+.build/
+DerivedData/
+*.xcuserstate
+*.xcuserdata
+*.moved-aside
+*.hmap
+*.ipa
+timeline.xctimeline
+playground.xcworkspace
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# OS / editor
+.DS_Store
+*.pem
+.idea/
+.vscode/
+
+# Local agent junk
+.claude/
+.cursor/

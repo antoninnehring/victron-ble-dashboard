@@ -1,0 +1,2 @@
+victron-ble>=0.7.0
+bleak>=0.21.0

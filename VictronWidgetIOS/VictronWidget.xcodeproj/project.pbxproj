@@ -1,0 +1,437 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		0194B44564B39A63255BBF16 /* VictronModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 82ADA3754790F4B0842C4A4B /* VictronModels.swift */; };
+		03D8D84E00D814173944D06D /* VictronWidgetExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = EB1BC57E8FFF8E5E6CD70EA2 /* VictronWidgetExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		5245865A53876E234DA18901 /* VictronModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 82ADA3754790F4B0842C4A4B /* VictronModels.swift */; };
+		7D6C104E928122F1C9286BDF /* VictronWidgetBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = E77A498D9ED2AC6195617877 /* VictronWidgetBundle.swift */; };
+		A554BE5A37F4B970150611C4 /* VictronWidgets.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7CA047B51B7986CE6AE4E43 /* VictronWidgets.swift */; };
+		BA8287F1EECFB075440C88C4 /* VictronWidgetApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A4C86AF8C8525A9D635B24B /* VictronWidgetApp.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		B704AC1113D2A52097D19183 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 47C89DC22DF57244582D090A /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = B12CBEADC57D6FBB7EBDBC56;
+			remoteInfo = VictronWidgetExtension;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		FED91DB029A57A648E9F917C /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				03D8D84E00D814173944D06D /* VictronWidgetExtension.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXFileReference section */
+		2451413F1452CF7B67B9AE73 /* VictronWidget.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = VictronWidget.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		52A140AB763ADC42A6788D66 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		5F0548BDCF289BBA2E4AC9C4 /* VictronWidgetExtension.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = VictronWidgetExtension.entitlements; sourceTree = "<group>"; };
+		82ADA3754790F4B0842C4A4B /* VictronModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VictronModels.swift; sourceTree = "<group>"; };
+		9A4C86AF8C8525A9D635B24B /* VictronWidgetApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VictronWidgetApp.swift; sourceTree = "<group>"; };
+		B7CA047B51B7986CE6AE4E43 /* VictronWidgets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VictronWidgets.swift; sourceTree = "<group>"; };
+		E3EC768C8847B3AC71CD9C8C /* VictronWidget.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = VictronWidget.entitlements; sourceTree = "<group>"; };
+		E77A498D9ED2AC6195617877 /* VictronWidgetBundle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VictronWidgetBundle.swift; sourceTree = "<group>"; };
+		EB1BC57E8FFF8E5E6CD70EA2 /* VictronWidgetExtension.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = VictronWidgetExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXGroup section */
+		0171350F40943FACAF7D81CE = {
+			isa = PBXGroup;
+			children = (
+				64AA2554C5A85656F7B49323 /* Shared */,
+				C4D8CB0096D59E8416A51803 /* VictronWidget */,
+				8781351DF6609D1C1E202431 /* VictronWidgetExtension */,
+				B9F719BCBBDEA6F9DB6A3C3D /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		64AA2554C5A85656F7B49323 /* Shared */ = {
+			isa = PBXGroup;
+			children = (
+				82ADA3754790F4B0842C4A4B /* VictronModels.swift */,
+			);
+			path = Shared;
+			sourceTree = "<group>";
+		};
+		8781351DF6609D1C1E202431 /* VictronWidgetExtension */ = {
+			isa = PBXGroup;
+			children = (
+				52A140AB763ADC42A6788D66 /* Info.plist */,
+				E77A498D9ED2AC6195617877 /* VictronWidgetBundle.swift */,
+				5F0548BDCF289BBA2E4AC9C4 /* VictronWidgetExtension.entitlements */,
+				B7CA047B51B7986CE6AE4E43 /* VictronWidgets.swift */,
+			);
+			path = VictronWidgetExtension;
+			sourceTree = "<group>";
+		};
+		B9F719BCBBDEA6F9DB6A3C3D /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				2451413F1452CF7B67B9AE73 /* VictronWidget.app */,
+				EB1BC57E8FFF8E5E6CD70EA2 /* VictronWidgetExtension.appex */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		C4D8CB0096D59E8416A51803 /* VictronWidget */ = {
+			isa = PBXGroup;
+			children = (
+				E3EC768C8847B3AC71CD9C8C /* VictronWidget.entitlements */,
+				9A4C86AF8C8525A9D635B24B /* VictronWidgetApp.swift */,
+			);
+			path = VictronWidget;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		0298C8341017A26DA24FF24E /* VictronWidget */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = E75CC68E3D68FD1B2C21042F /* Build configuration list for PBXNativeTarget "VictronWidget" */;
+			buildPhases = (
+				1E2A5192A1851E24FFB93299 /* Sources */,
+				FED91DB029A57A648E9F917C /* Embed Foundation Extensions */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				4640EE58154324E5543EBB77 /* PBXTargetDependency */,
+			);
+			name = VictronWidget;
+			packageProductDependencies = (
+			);
+			productName = VictronWidget;
+			productReference = 2451413F1452CF7B67B9AE73 /* VictronWidget.app */;
+			productType = "com.apple.product-type.application";
+		};
+		B12CBEADC57D6FBB7EBDBC56 /* VictronWidgetExtension */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 2F64E8D64A6D0C9E24D8B6BE /* Build configuration list for PBXNativeTarget "VictronWidgetExtension" */;
+			buildPhases = (
+				BEB9601442687B42FDD5B0F4 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = VictronWidgetExtension;
+			packageProductDependencies = (
+			);
+			productName = VictronWidgetExtension;
+			productReference = EB1BC57E8FFF8E5E6CD70EA2 /* VictronWidgetExtension.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		47C89DC22DF57244582D090A /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1430;
+				TargetAttributes = {
+					0298C8341017A26DA24FF24E = {
+						DevelopmentTeam = "";
+					};
+					B12CBEADC57D6FBB7EBDBC56 = {
+						DevelopmentTeam = "";
+					};
+				};
+			};
+			buildConfigurationList = D637B46E9296F9F79F44B5A3 /* Build configuration list for PBXProject "VictronWidget" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = 0171350F40943FACAF7D81CE;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = B9F719BCBBDEA6F9DB6A3C3D /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				0298C8341017A26DA24FF24E /* VictronWidget */,
+				B12CBEADC57D6FBB7EBDBC56 /* VictronWidgetExtension */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXSourcesBuildPhase section */
+		1E2A5192A1851E24FFB93299 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				0194B44564B39A63255BBF16 /* VictronModels.swift in Sources */,
+				BA8287F1EECFB075440C88C4 /* VictronWidgetApp.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		BEB9601442687B42FDD5B0F4 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				5245865A53876E234DA18901 /* VictronModels.swift in Sources */,
+				7D6C104E928122F1C9286BDF /* VictronWidgetBundle.swift in Sources */,
+				A554BE5A37F4B970150611C4 /* VictronWidgets.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		4640EE58154324E5543EBB77 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = B12CBEADC57D6FBB7EBDBC56 /* VictronWidgetExtension */;
+			targetProxy = B704AC1113D2A52097D19183 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		42DB1FF964F143936E6797F4 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = VictronWidget/VictronWidget.entitlements;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.victron.VictronWidget;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		74FE9C673F315FD3DC82E557 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = VictronWidgetExtension/VictronWidgetExtension.entitlements;
+				INFOPLIST_FILE = VictronWidgetExtension/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.victron.VictronWidgetExtension;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		869858CC626DEBA4D54BFA5B /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = VictronWidget/VictronWidget.entitlements;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.victron.VictronWidget;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		C030BAA175FBBCE3D543962F /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		C80460CC699E32B0BE6CED1B /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = "";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		E47F3000AE115BEDCFFF2AD4 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = VictronWidgetExtension/VictronWidgetExtension.entitlements;
+				INFOPLIST_FILE = VictronWidgetExtension/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.victron.VictronWidgetExtension;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		2F64E8D64A6D0C9E24D8B6BE /* Build configuration list for PBXNativeTarget "VictronWidgetExtension" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				74FE9C673F315FD3DC82E557 /* Debug */,
+				E47F3000AE115BEDCFFF2AD4 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		D637B46E9296F9F79F44B5A3 /* Build configuration list for PBXProject "VictronWidget" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				C030BAA175FBBCE3D543962F /* Debug */,
+				C80460CC699E32B0BE6CED1B /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		E75CC68E3D68FD1B2C21042F /* Build configuration list for PBXNativeTarget "VictronWidget" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				42DB1FF964F143936E6797F4 /* Debug */,
+				869858CC626DEBA4D54BFA5B /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 47C89DC22DF57244582D090A /* Project object */;
+}

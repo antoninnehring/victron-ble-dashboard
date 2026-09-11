@@ -1,0 +1,57 @@
+name: VictronWidget
+options:
+  deploymentTarget:
+    iOS: "17.0"
+  bundleIdPrefix: com.victron
+
+settings:
+  base:
+    DEVELOPMENT_TEAM: ""
+
+targets:
+  VictronWidget:
+    type: application
+    platform: iOS
+    bundleIdOverride: com.victron.widget
+    sources:
+      - path: VictronWidget
+      - path: Shared
+    settings:
+      base:
+        INFOPLIST_KEY_UIApplicationSceneManifest_Generation: true
+        INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents: true
+        INFOPLIST_KEY_UILaunchScreen_Generation: true
+        INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad: "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
+        INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone: "UIInterfaceOrientationPortrait"
+        CODE_SIGN_ENTITLEMENTS: VictronWidget/VictronWidget.entitlements
+    entitlements:
+      path: VictronWidget/VictronWidget.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.com.victron.widget
+    dependencies:
+      - target: VictronWidgetExtension
+
+  VictronWidgetExtension:
+    type: app-extension
+    platform: iOS
+    bundleIdOverride: com.victron.widget.extension
+    sources:
+      - path: VictronWidgetExtension
+      - path: Shared
+    settings:
+      base:
+        CODE_SIGN_ENTITLEMENTS: VictronWidgetExtension/VictronWidgetExtension.entitlements
+    entitlements:
+      path: VictronWidgetExtension/VictronWidgetExtension.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.com.victron.widget
+    frameworks:
+      - sdk: WidgetKit.framework
+      - sdk: SwiftUI.framework
+    info:
+      path: VictronWidgetExtension/Info.plist
+      properties:
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
