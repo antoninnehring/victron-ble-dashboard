@@ -1,38 +1,46 @@
 # Victron BLE dashboard
 
-Local dashboard for Victron Instant Readout devices over Bluetooth. A Python reader decrypts BLE advertisements, writes JSON, and a Next.js app (plus optional macOS / iOS widgets) displays battery, solar, and a weather-based yield forecast.
+Live numbers from your Victron solar and battery gear, over Bluetooth. No Cerbo/GX box. No VRM account.
 
-Nothing here talks to Victron VRM. Your encryption keys stay on the machine that runs the reader.
+You get a **macOS menu-bar panel** and a **local web dashboard**. It also guesses today’s and this week’s solar from the weather. History is only the days this Mac was actually scanning — not VictronConnect’s stored trends.
 
-## History (what this app can and cannot read)
+This is **not** a VictronConnect replacement. You still copy Instant Readout keys from VictronConnect once.
 
-**Instant Readout is a live snapshot**, not VictronConnect stored trends and not VRM.
+## What it looks like
 
-| Source | What you get |
-| --- | --- |
-| BLE advertisements | Live SOC, volts, amps, solar watts, **yield today**, remaining time, alarms. No multi-year log. |
-| `ble-history.json` / dashboard charts | Days **this Mac was scanning**. Yield, peak power, SOC min/max, charge/discharge Ah, AC energy if a VE.Bus device reports it. |
-| VictronConnect stored trends | On the phone/tablet that connected to the device. This app cannot read that. |
-| VRM cloud | Needs a GX device + VRM login. This project does not call VRM (no tokens in `.env`). |
+The menu extra is a bolt + SOC. **Blue** when the battery is charging, **orange** when it’s discharging.
 
-Solar chargers expose yield **today**, not last winter. BMV/BMS expose current consumed Ah, not a full history dump. If the Mac sleeps, those hours are missing from the local file.
+<p>
+  <img src="docs/screenshots/menubar-charging.png" alt="Menu extra while charging: blue bolt and 44%" width="220">
+  <img src="docs/screenshots/menubar-live.png" alt="Live menu extra while discharging: orange bolt and 44%" width="220">
+</p>
 
-## Instant Readout devices this reader parses
+Charging (blue) is the same extra, tinted — this Mac was discharging when the shots were taken, so there is no live charging capture. The orange one is live.
 
-The BLE decoder maps every getter in `victron_ble` (`SolarCharger`, `BatteryMonitor`, `LynxSmartBMS`, `VEBus`, `Inverter`, `DcDcConverter`, `OrionXS`, `AcCharger`, `SmartLithium`, `SmartBatteryProtect`, `BatterySense`, `DcEnergyMeter`, `MultiRS`).
+The 16:9 panel (Input / Battery / Output + forecast). Live, discharging:
 
-Scan/wizard labels match those types (plus Inverter RS advertisements, which Victron broadcasts but `victron_ble` does not decrypt).
+![macOS panel](docs/screenshots/panel.png)
 
-**Still not visible over BLE Instant Readout** (need VE.Direct, a GX / VRM, or VictronConnect connected): Cerbo/Ekrano GX itself, EV Charging Station, VM-3P75CT (wired Instant Readout only), Peak Power Pack, most VE.Direct-only BlueSolar units unless they have a VE.Direct Bluetooth dongle, Inverter RS payload (advertised, not decoded).
+The web dashboard on this Mac (`localhost`):
 
-## Requirements
+![Web dashboard](docs/screenshots/dashboard.png)
 
-- Node.js 20+
-- Python 3.10+ with Bluetooth access
-- VictronConnect, so you can copy Instant Readout keys
-- macOS is the tested Bluetooth stack (CoreBluetooth via Bleak). Linux can work with BlueZ; Windows is untested.
+## Who it’s for
 
-## 1. Clone and install
+People with an off-grid, van, boat, or cabin Victron kit (SmartSolar, BMV / SmartShunt, BMS, MultiPlus, and similar) who keep a **Mac nearby** that can hear the devices.
+
+## Platform
+
+- **macOS** — this is the app. Menubar widget + Python BLE reader.
+- **Browser** — dashboard at `http://localhost:3000` on that Mac.
+- **iOS (optional)** — Lock Screen / Home Screen widget that talks to the Mac on your LAN.
+- **Not** a first-class Windows or Linux app.
+
+Encryption keys stay on the Mac. Nothing is sent to Victron’s cloud.
+
+## Setup
+
+You need Node.js 20+, Python 3.10+, and VictronConnect (for the keys).
 
 ```bash
 git clone https://github.com/antoninnehring/victron-ble-dashboard.git
@@ -41,89 +49,23 @@ npm install
 pip3 install -r ble-reader/requirements.txt
 ```
 
-## 2. First installation (wizard)
+1. **Keys** — VictronConnect → device → Settings → Product Info → Instant Readout. Quit VictronConnect after that so it doesn’t steal Bluetooth.
+2. **Reader** — `python3 ble-reader/reader.py` (leave it running).
+3. **Dashboard** — `npm run dev`, then open [http://localhost:3000](http://localhost:3000). A setup wizard scans for devices and saves them to `victron-config.json` (gitignored).
 
-Start the dashboard, then open it in a browser. With no devices configured it opens a setup wizard:
+That’s it. Re-open the wizard later with **Edit installation**, or **Edit** in the menu-bar panel.
 
-1. **Installation name** — van / house / boat (shown in the dashboard and macOS panel)
-2. **Discover devices** — 8s BLE scan; select which to include, or type an address
-3. **Encryption keys** — VictronConnect → device → Settings → Product Info → Instant Readout
-4. **Names + BMS** — name each device; pick the shunt/BMS whose SOC should win
-5. **Save** — writes `victron-config.json` (gitignored, mode 0600)
-
-Re-open later with **Edit installation** in the dashboard header, `?setup=1`, or **Edit** in the macOS panel. Saving does not wipe `ble-history.json`.
-
-Keep VictronConnect closed while scanning and while the reader runs; it can steal the adapter.
-
-### Existing `.env.local` setups
-
-The reader still loads `VICTRON_DEVICES` / `VICTRON_DEVICE_NAMES` / `VICTRON_BMS_ADDRESS` if no JSON config exists. Open **Edit installation** (fields are pre-filled from env) and save once to migrate. After that, `victron-config.json` wins. Do not commit that file.
-
-Manual fallback remains:
-
-```bash
-cp victron-config.example.json victron-config.json
-# or
-cp .env.example .env.local
-```
-
-Optional env still used for forecast coordinates:
-
-- `SITE_LAT` / `SITE_LON`
-- `SITE_CAPACITY_W`
-- `BLE_INTERVAL`
-- `VICTRON_INSTALLATION_NAME` (only if you have not saved JSON yet)
-
-## 3. Start the BLE reader
-
-From `victron-dashboard/`:
-
-```bash
-python3 ble-reader/reader.py
-```
-
-Or `ble-reader/run.sh`. Leave it running. It writes `ble-data.json` and `ble-history.json` next to the Next.js app (those files are gitignored).
-
-If Bluetooth dies or the Mac sleeps, the reader restarts the scanner instead of staying stuck on the last failure.
-
-## 4. Start the dashboard
-
-```bash
-npm run dev
-```
-
-Open [http://localhost:3000](http://localhost:3000). The first visit runs the installation wizard until devices are saved. After that, start the reader if `ble-data.json` is missing.
-
-### Solar forecast
-
-The `/api/forecast` route uses [Open-Meteo](https://open-meteo.com/) (no API key). It resolves location from `SITE_LAT` / `SITE_LON`, then `victron-config.json`, then this Mac’s public IP. No browser or widget location permission. The estimate uses sun angle, season, cloud/GHI, and yesterday’s actual yield when history exists.
-
-## macOS menubar widget
-
-`VictronWidget/` is a SwiftPM menubar app. It reads the same `ble-data.json`. Click the menu extra, or the Dock icon, for the larger panel. On first launch with no devices it opens a setup wizard window; **Edit** in the header re-opens it. The 16:9 telemetry panel is unchanged.
+### Menu bar (macOS)
 
 ```bash
 cd VictronWidget
 swift build -c release
+.build/release/VictronWidget
 ```
 
-Point it at the JSON file (first match wins):
+It reads the same `ble-data.json` the reader writes.
 
-1. `VICTRON_BLE_DATA` — absolute path
-2. `victron-dashboard/ble-data.json` next to this repo
-3. `~/victron-dashboard/ble-data.json`
-4. the original local path, if that file still exists
-
-Example:
-
-```bash
-VICTRON_BLE_DATA="$PWD/../victron-dashboard/ble-data.json" \
-  .build/release/VictronWidget
-```
-
-## iOS widget (optional)
-
-`VictronWidgetIOS/` is an Xcode / XcodeGen project. The iPhone app points at your dashboard URL (`http://<lan-ip>:3000`) and the widget extension reads `/api/vrm`. The Mac running the dashboard must be reachable on the LAN; Instant Readout keys never leave the reader host.
+### iPhone widget (optional)
 
 ```bash
 cd VictronWidgetIOS
@@ -131,21 +73,10 @@ xcodegen generate
 open VictronWidget.xcodeproj
 ```
 
-## Layout
+Point the app at `http://<your-mac-lan-ip>:3000`. Keys never leave the Mac.
 
-```
-victron-dashboard/          Next.js UI + API
-  ble-reader/               Python BLE decoder
-  victron-config.example.json
-  .env.example              placeholders only
-VictronWidget/              macOS menubar + dock panel + setup wizard
-VictronWidgetIOS/           iOS app + Lock Screen / Home Screen widgets
-```
+## If something’s wrong
 
-## Troubleshooting
-
-- **No devices in scan** — Instant Readout on, device powered, Bluetooth on, VictronConnect quit.
-- **Decode errors / wrong key** — key must match that device’s Instant Readout secret; one key per address.
-- **Dashboard says no BLE data** — reader must be running from `victron-dashboard/` so it writes `ble-data.json` there.
-- **Stale / stuck readings** — reader restarts the scanner after empty cycles, adapter errors, and sleep. Restart `reader.py` if the adapter itself is wedged (`blueutil --power 0 && blueutil --power 1` on a Mac).
-- **Forecast has no location** — set `SITE_LAT` / `SITE_LON` in `.env.local`, or let the dashboard cache the Mac’s public-IP location in `victron-config.json`.
+- No devices in the scan — Instant Readout on, gear powered, Bluetooth on, VictronConnect quit.
+- Dashboard says no BLE data — the reader must be running from `victron-dashboard/`.
+- Forecast looks lost — set `SITE_LAT` / `SITE_LON` in `.env.local`, or let it use this Mac’s public IP.
