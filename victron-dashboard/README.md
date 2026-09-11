@@ -10,4 +10,4 @@ npm install
 npm run dev                    # http://localhost:3000
 ```
 
-`SITE_LAT` / `SITE_LON` in `.env.local` pin the solar forecast; otherwise the browser can share location.
+`SITE_LAT` / `SITE_LON` in `.env.local` pin the solar forecast. If unset, the server uses the Mac’s public IP (and caches it in `victron-config.json`).

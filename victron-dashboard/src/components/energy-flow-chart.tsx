@@ -23,9 +23,12 @@ export function EnergyFlowChart({ dailyStats }: { dailyStats: DailyStats[] }) {
 
   return (
     <div className="bg-gray-900 border border-gray-800 rounded-2xl p-5">
-      <h3 className="text-sm font-medium text-gray-400 mb-4">
-        Solar Production History
+      <h3 className="text-sm font-medium text-gray-400 mb-1">
+        Solar production (this Mac)
       </h3>
+      <p className="text-xs text-gray-600 mb-4">
+        Days this Mac was scanning — not VictronConnect or VRM history.
+      </p>
       <ResponsiveContainer width="100%" height={280}>
         <AreaChart data={chartData}>
           <defs>

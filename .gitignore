@@ -12,6 +12,11 @@ ble-history.json
 **/ble-data.json
 **/ble-history.json
 
+# Installation config contains Instant Readout keys
+victron-config.json
+**/victron-config.json
+!**/victron-config.example.json
+
 # Node / Next.js
 node_modules/
 .next/

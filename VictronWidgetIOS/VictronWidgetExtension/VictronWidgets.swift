@@ -225,7 +225,7 @@ struct MediumWidgetView: View {
                                     .font(.system(size: 9))
                                     .foregroundStyle(.tertiary)
                                 if let diff = data.yieldDiffPercent {
-                                    Text(String(format: "%+.0f%%", diff))
+                                    Text(String(format: "%+.0f%% vs this hour", diff))
                                         .font(.system(size: 9, weight: .bold))
                                         .foregroundStyle(diff >= 0 ? victronBlue : victronOrange)
                                 }

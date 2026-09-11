@@ -38,6 +38,9 @@ yarn-error.log*
 ble-data.json
 ble-history.json
 
+# Installation config contains Instant Readout keys
+victron-config.json
+
 # vercel
 .vercel
 

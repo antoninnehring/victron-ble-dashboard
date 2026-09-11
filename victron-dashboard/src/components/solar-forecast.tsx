@@ -14,13 +14,6 @@ import { format, parseISO } from "date-fns";
 import { formatKwh, whToKwh } from "@/lib/energy";
 import { weatherInfo, type DayWeather, type HourlyPoint, type SolarEstimate } from "@/lib/solar-forecast";
 
-const LOCATION_KEY = "victron-site-location";
-
-interface StoredLocation {
-  lat: number;
-  lon: number;
-}
-
 interface ForecastResponse {
   needsLocation?: boolean;
   message?: string;
@@ -29,7 +22,8 @@ interface ForecastResponse {
     latitude: number;
     longitude: number;
     timezone: string;
-    source: "device" | "config";
+    label?: string | null;
+    source: "query" | "env" | "config" | "ip";
   };
   todayIso?: string;
   estimate?: SolarEstimate;
@@ -41,24 +35,6 @@ interface ForecastResponse {
 interface TimePoint {
   t: string;
   solar: number;
-}
-
-function readStoredLocation(): StoredLocation | null {
-  try {
-    const raw = localStorage.getItem(LOCATION_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as StoredLocation;
-    if (!Number.isFinite(parsed.lat) || !Number.isFinite(parsed.lon)) return null;
-    return parsed;
-  } catch {
-    return null;
-  }
-}
-
-function formatCoord(lat: number, lon: number): string {
-  const ns = lat >= 0 ? "N" : "S";
-  const ew = lon >= 0 ? "E" : "W";
-  return `${Math.abs(lat).toFixed(2)}°${ns} ${Math.abs(lon).toFixed(2)}°${ew}`;
 }
 
 function sunClock(iso: string): string {
@@ -133,23 +109,14 @@ export function SolarForecast({
   timeseries: TimePoint[];
   dataIsLive: boolean;
 }) {
-  const [location, setLocation] = useState<StoredLocation | null>(null);
-  const [locationReady, setLocationReady] = useState(false);
   const [forecast, setForecast] = useState<ForecastResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [geoBusy, setGeoBusy] = useState(false);
 
-  useEffect(() => {
-    setLocation(readStoredLocation());
-    setLocationReady(true);
-  }, []);
-
-  const fetchForecast = useCallback(async (coords: StoredLocation | null) => {
+  const fetchForecast = useCallback(async () => {
     setLoading(true);
     try {
-      const q = coords ? `?lat=${coords.lat}&lon=${coords.lon}` : "";
-      const res = await fetch(`/api/forecast${q}`);
+      const res = await fetch("/api/forecast");
       const json = (await res.json()) as ForecastResponse;
       if (json.error) {
         setError(json.message ?? json.error);
@@ -166,32 +133,10 @@ export function SolarForecast({
   }, []);
 
   useEffect(() => {
-    if (!locationReady) return;
-    fetchForecast(location);
-    const interval = setInterval(() => fetchForecast(location), 15 * 60_000);
+    fetchForecast();
+    const interval = setInterval(fetchForecast, 15 * 60_000);
     return () => clearInterval(interval);
-  }, [fetchForecast, location, locationReady]);
-
-  const requestGeo = useCallback(() => {
-    if (!navigator.geolocation) {
-      setError("Geolocation is not available in this browser.");
-      return;
-    }
-    setGeoBusy(true);
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        const coords = { lat: pos.coords.latitude, lon: pos.coords.longitude };
-        localStorage.setItem(LOCATION_KEY, JSON.stringify(coords));
-        setLocation(coords);
-        setGeoBusy(false);
-      },
-      (err) => {
-        setError(err.message || "Location permission denied.");
-        setGeoBusy(false);
-      },
-      { enableHighAccuracy: false, timeout: 10_000, maximumAge: 6 * 3600_000 },
-    );
-  }, []);
+  }, [fetchForecast]);
 
   const producedKwh = dataIsLive ? whToKwh(yieldTodayWh) : 0;
   const estimate = forecast?.estimate;
@@ -233,20 +178,11 @@ export function SolarForecast({
 
   if (forecast?.needsLocation) {
     return (
-      <section className="bg-gray-900 border border-gray-800 rounded-2xl p-5 space-y-3">
+      <section className="bg-gray-900 border border-gray-800 rounded-2xl p-5 space-y-2">
         <h3 className="text-sm font-medium text-gray-400">Solar forecast</h3>
         <p className="text-sm text-gray-500">
-          Location is needed to estimate today&apos;s yield from sun angle, season, and weather.
+          {forecast.message ?? "Could not resolve site location from this Mac’s public IP."}
         </p>
-        <button
-          type="button"
-          onClick={requestGeo}
-          disabled={geoBusy}
-          className="px-4 py-2 bg-amber-900/80 hover:bg-amber-800 rounded-lg text-sm text-amber-100 transition-colors disabled:opacity-50"
-        >
-          {geoBusy ? "Locating…" : "Use my location"}
-        </button>
-        {error && <p className="text-xs text-red-400">{error}</p>}
       </section>
     );
   }
@@ -275,22 +211,9 @@ export function SolarForecast({
           <p className="text-xs text-gray-600 mt-1">
             {estimate.season} · sun {estimate.noonAltitudeDeg.toFixed(0)}° at noon ·{" "}
             {estimate.daylightHours.toFixed(1)} h daylight
-            {loc && (
-              <>
-                {" "}
-                · {formatCoord(loc.latitude, loc.longitude)}
-              </>
-            )}
+            {loc?.label && <> · Location: {loc.label}</>}
           </p>
         </div>
-        <button
-          type="button"
-          onClick={requestGeo}
-          disabled={geoBusy}
-          className="text-xs text-gray-500 hover:text-gray-300 transition-colors"
-        >
-          {geoBusy ? "Locating…" : "Update location"}
-        </button>
       </header>
 
       <div className="grid md:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)] gap-6 items-end">

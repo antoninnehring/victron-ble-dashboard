@@ -1,49 +1,77 @@
 import { NextResponse } from "next/server";
 import { readFileSync } from "fs";
 import { join } from "path";
+import { loadInstallation } from "@/lib/victron-config";
+import {
+  computeSameHour,
+  formatWh,
+  localClock,
+  localIsoDate,
+  type HistoryDays,
+  type SameHourCompare,
+} from "@/lib/same-hour";
+import type {
+  DailyStats,
+  HistoryMeta,
+  RawDeviceSnapshot,
+  SystemOverview,
+} from "@/lib/vrm-api";
 
 export const dynamic = "force-dynamic";
 
 interface BLEData {
-  overview: {
-    battery: {
-      soc: number;
-      voltage: number;
-      current: number;
-      power: number;
-      state: string;
-      temperature: number;
-      consumed_ah: number;
-      remaining_mins: number;
-    };
-    solar: { power: number; yieldToday: number };
-    inverter: { ac_power: number };
-    alarm: string;
-    devices: Record<string, { address: string; last_seen: number; fields: string[] }>;
-  };
-  dailyStats: {
-    date: string;
-    solarYield: number;
-    solarPeakPower: number;
-    batterySOCMin: number;
-    batterySOCMax: number;
-    samples: number;
-  }[];
+  overview: SystemOverview;
+  installationName?: string;
+  dailyStats: DailyStats[];
   lastUpdated: number;
   deviceCount: number;
+  bluetoothOff?: boolean;
+  history?: HistoryMeta;
+  raw_devices?: Record<string, RawDeviceSnapshot>;
+  sameHour?: SameHourCompare;
+}
+
+function loadHistoryDays(): HistoryDays {
+  try {
+    const raw = readFileSync(join(process.cwd(), "ble-history.json"), "utf-8");
+    const parsed = JSON.parse(raw) as { days?: HistoryDays };
+    return parsed.days ?? {};
+  } catch {
+    return {};
+  }
+}
+
+function resolveSameHour(data: BLEData): SameHourCompare {
+  const todayWh = data.overview?.solar?.yieldToday ?? 0;
+  return computeSameHour({
+    days: loadHistoryDays(),
+    todayIso: localIsoDate(),
+    clock: localClock(),
+    todayWh,
+  });
 }
 
 function generateAlerts(data: BLEData) {
   const alerts: { id: string; level: "info" | "warning" | "critical"; title: string; message: string; timestamp: number }[] = [];
   const now = Date.now();
-  const { overview, dailyStats } = data;
+  const { overview } = data;
+  if (!overview) return alerts;
+
+  if (data.bluetoothOff) {
+    alerts.push({
+      id: "bluetooth-off",
+      level: "critical",
+      title: "Bluetooth is off",
+      message: "Bluetooth is off — turn it on in Control Center to read Victron devices.",
+      timestamp: now,
+    });
+  }
 
   // Stale data warning — based on when devices were actually last heard from, not file write time
-  const newestDeviceSeen = Math.max(
-    ...Object.values(overview.devices).map((d) => d.last_seen)
-  );
+  const lastSeens = Object.values(overview?.devices ?? {}).map((d) => d.last_seen);
+  const newestDeviceSeen = lastSeens.length ? Math.max(...lastSeens) : 0;
   const deviceAgeSecs = now / 1000 - newestDeviceSeen;
-  if (deviceAgeSecs > 120) {
+  if (!data.bluetoothOff && deviceAgeSecs > 120) {
     const ageMins = Math.round(deviceAgeSecs / 60);
     alerts.push({
       id: "stale-data",
@@ -55,29 +83,31 @@ function generateAlerts(data: BLEData) {
   }
 
   // Low battery
-  if (overview.battery.soc > 0 && overview.battery.soc < 20) {
+  const soc = overview.battery?.soc ?? 0;
+  if (soc > 0 && soc < 20) {
     alerts.push({
       id: "low-battery",
       level: overview.battery.soc < 10 ? "critical" : "warning",
       title: "Low Battery",
-      message: `Battery at ${overview.battery.soc}% - consider reducing consumption`,
+      message: `Battery at ${soc}% - consider reducing consumption`,
       timestamp: now,
     });
   }
 
   // High battery temperature
-  if (overview.battery.temperature > 45) {
+  const temp = overview.battery?.temperature ?? 0;
+  if (temp > 45) {
     alerts.push({
       id: "high-temp",
       level: "warning",
       title: "High Battery Temperature",
-      message: `Battery temperature at ${overview.battery.temperature}C`,
+      message: `Battery temperature at ${temp}C`,
       timestamp: now,
     });
   }
 
   // Device alarm
-  if (overview.alarm && overview.alarm !== "None") {
+  if (overview.alarm && overview.alarm !== "None" && overview.alarm !== "NO_ALARM") {
     alerts.push({
       id: "device-alarm",
       level: "critical",
@@ -87,47 +117,42 @@ function generateAlerts(data: BLEData) {
     });
   }
 
-  // Solar yield comparison with yesterday
-  if (dailyStats.length >= 2) {
-    const today = dailyStats[dailyStats.length - 1];
-    const yesterday = dailyStats[dailyStats.length - 2];
-    if (today && yesterday && yesterday.solarYield > 0) {
-      const diff = ((today.solarYield - yesterday.solarYield) / yesterday.solarYield) * 100;
-      if (diff < -50) {
-        alerts.push({
-          id: "solar-drop",
-          level: "warning",
-          title: "Solar Yield Drop",
-          message: `Today's yield is ${Math.abs(diff).toFixed(0)}% lower than yesterday (${(today.solarYield / 1000).toFixed(1)} vs ${(yesterday.solarYield / 1000).toFixed(1)} kWh)`,
-          timestamp: now,
-        });
-      }
-    }
+  // Same-hour yield vs calendar yesterday (never full-day vs morning-so-far)
+  const sameHour = data.sameHour;
+  if (sameHour?.available && sameHour.diffPercent != null && sameHour.diffPercent < -50) {
+    const yWh = sameHour.yesterdayWh ?? 0;
+    alerts.push({
+      id: "solar-drop",
+      level: "warning",
+      title: "Behind yesterday at this hour",
+      message: `Yield at this hour is ${Math.abs(sameHour.diffPercent).toFixed(0)}% lower than yesterday (${formatWh(sameHour.todayWh)} vs ${formatWh(yWh)})`,
+      timestamp: now,
+    });
   }
 
-  // 7-day average comparison
-  if (dailyStats.length >= 7) {
-    const last7 = dailyStats.slice(-7);
-    const avg = last7.reduce((s, d) => s + d.solarYield, 0) / 7;
-    const today = dailyStats[dailyStats.length - 1];
-    if (today && avg > 0 && today.solarYield < avg * 0.5) {
-      alerts.push({
-        id: "below-avg",
-        level: "info",
-        title: "Below Average Solar",
-        message: `Today's yield (${(today.solarYield / 1000).toFixed(1)} kWh) is below 7-day avg (${(avg / 1000).toFixed(1)} kWh)`,
-        timestamp: now,
-      });
-    }
+  // Same-hour vs weekly average of completed days (skip if not enough morning samples)
+  if (
+    sameHour?.weekAvgWh &&
+    sameHour.weekDiffPercent != null &&
+    sameHour.weekDiffPercent < -50
+  ) {
+    alerts.push({
+      id: "below-avg",
+      level: "info",
+      title: "Below average at this hour",
+      message: `At this hour, yield (${formatWh(sameHour.todayWh)}) is below your weekly average (${formatWh(sameHour.weekAvgWh)})`,
+      timestamp: now,
+    });
   }
 
   // Low remaining time
-  if (overview.battery.remaining_mins > 0 && overview.battery.remaining_mins < 120) {
+  const remaining = overview.battery?.remaining_mins ?? 0;
+  if (remaining > 0 && remaining < 120) {
     alerts.push({
       id: "low-remaining",
       level: overview.battery.remaining_mins < 30 ? "critical" : "warning",
       title: "Low Battery Time Remaining",
-      message: `Estimated ${overview.battery.remaining_mins} minutes of battery remaining`,
+      message: `Estimated ${remaining} minutes of battery remaining`,
       timestamp: now,
     });
   }
@@ -143,7 +168,8 @@ export async function GET() {
   try {
     const raw = readFileSync(dataFile, "utf-8");
     const data: BLEData = JSON.parse(raw);
-    const alerts = generateAlerts(data);
+    const sameHour = resolveSameHour(data);
+    const alerts = generateAlerts({ ...data, sameHour });
 
     const lastSeens = Object.values(data.overview?.devices ?? {}).map(
       (d) => d.last_seen
@@ -151,9 +177,12 @@ export async function GET() {
     const newestSeen = lastSeens.length ? Math.max(...lastSeens) : 0;
     const devicesStale = (Date.now() / 1000 - newestSeen) > 120;
 
+    const inst = loadInstallation();
     return NextResponse.json(
       {
         ...data,
+        sameHour,
+        installationName: data.installationName || inst.installationName || "",
         alerts,
         devicesStale,
       },

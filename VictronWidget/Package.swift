@@ -10,6 +10,10 @@ let package = Package(
             path: "Sources",
             resources: [
                 .copy("Victron_Energy_Logo.svg"),
+            ],
+            linkerSettings: [
+                .linkedFramework("IOBluetooth"),
+                .linkedFramework("CoreBluetooth"),
             ]
         ),
     ]

@@ -1,26 +1,7 @@
 import Foundation
 
 enum BleDataFile {
-    static var path: String {
-        if let env = ProcessInfo.processInfo.environment["VICTRON_BLE_DATA"]?
-            .trimmingCharacters(in: .whitespacesAndNewlines), !env.isEmpty {
-            return env
-        }
-        let fm = FileManager.default
-        let home = fm.homeDirectoryForCurrentUser
-        let cwd = URL(fileURLWithPath: fm.currentDirectoryPath, isDirectory: true)
-        let candidates = [
-            cwd.appendingPathComponent("victron-dashboard/ble-data.json"),
-            cwd.appendingPathComponent("../victron-dashboard/ble-data.json"),
-            home.appendingPathComponent("victron-dashboard/ble-data.json"),
-            home.appendingPathComponent("Fabrique/victron shit/victron-dashboard/ble-data.json"),
-        ]
-        for url in candidates {
-            let path = url.standardizedFileURL.path
-            if fm.fileExists(atPath: path) { return path }
-        }
-        return home.appendingPathComponent("victron-dashboard/ble-data.json").path
-    }
+    static var path: String { DashboardFiles.bleData.path }
 }
 
 struct VictronData: Codable {
@@ -30,6 +11,30 @@ struct VictronData: Codable {
     let todayEnergy: TodayEnergy
     let lastUpdated: Double
     let deviceCount: Int
+    let installationName: String?
+    let history: HistoryMeta?
+    let sameHour: SameHour?
+
+    struct HistoryMeta: Codable {
+        let source: String?
+        let label: String?
+        let not: String?
+        let days: Int?
+    }
+
+    struct SameHour: Codable {
+        let clock: String
+        let todayWh: Double
+        let yesterdayWh: Double?
+        let yesterdayAt: String?
+        let diffPercent: Double?
+        let available: Bool
+        let weekAvgWh: Double?
+        let weekDiffPercent: Double?
+        let weekDays: Int?
+        let recordWh: Double?
+        let isRecord: Bool?
+    }
 
     struct TodayEnergy: Codable {
         let chargedAh: Double
@@ -37,12 +42,15 @@ struct VictronData: Codable {
         let dcdcAh: Double
         let solarYield: Double
         let consumedAhNet: Double
+        let acInWh: Double?
+        let acOutWh: Double?
     }
 
     struct Overview: Codable {
         let battery: Battery
         let solar: Solar
         let inverter: Inverter
+        let dcdc: DcDc?
         let alarm: String
         let devices: [String: DeviceInfo]
     }
@@ -61,17 +69,35 @@ struct VictronData: Codable {
     struct Solar: Codable {
         let power: Double
         let yieldToday: Double
+        let loadA: Double?
     }
 
     struct Inverter: Codable {
         let ac_power: Double
+        let ac_in_power: Double?
+        let ac_in_state: String?
+        let state: String?
+        let ac_voltage: Double?
+        let ac_current: Double?
+    }
+
+    struct DcDc: Codable {
+        let power: Double?
+        let input_voltage: Double?
+        let output_voltage: Double?
+        let output_current: Double?
+        let state: String?
     }
 
     struct DeviceInfo: Codable {
         let address: String
         let name: String
         let last_seen: Double
-        let fields: [String]
+        let fields: [String]?
+        let type: String?
+        let typeLabel: String?
+        let model: String?
+        let summary: String?
     }
 
     struct DailyStat: Codable {
@@ -91,6 +117,7 @@ struct VictronData: Codable {
         let solar: Double
         let current: Double
         let soc: Double
+        let yield: Double?
         var id: String { t }
     }
 
@@ -113,12 +140,13 @@ struct VictronData: Codable {
     /// Net battery power from BMS (positive = charging, negative = discharging)
     var netPower: Double { battery.power }
 
+    var resolvedSameHour: SameHour? {
+        sameHour ?? SameHour.compute(todayWh: solar.yieldToday)
+    }
+
     var yieldDiffPercent: Double? {
-        guard dailyStats.count >= 2 else { return nil }
-        let today = dailyStats[dailyStats.count - 1]
-        let yesterday = dailyStats[dailyStats.count - 2]
-        guard yesterday.solarYield > 0 else { return nil }
-        return ((today.solarYield - yesterday.solarYield) / yesterday.solarYield) * 100
+        guard let sh = resolvedSameHour, sh.available, let diff = sh.diffPercent else { return nil }
+        return diff
     }
 
     static func load() -> VictronData? {
@@ -148,16 +176,13 @@ struct VictronData: Codable {
         let today = stats.last!
         let previous = Array(stats.dropLast())
 
-        // --- Record solar yield ---
-        if previous.count >= 2 {
-            let prevMax = previous.map(\.solarYield).max() ?? 0
-            if today.solarYield > prevMax && today.solarYield > 0 {
-                results.append(Insight(
-                    icon: "trophy.fill",
-                    text: "Record day! Best solar yield ever recorded: \(fmtWh(today.solarYield))",
-                    mood: .positive
-                ))
-            }
+        // --- Record solar yield at this hour (never unfinished today vs a completed day) ---
+        if let sh = resolvedSameHour, sh.isRecord == true, sh.todayWh > 0 {
+            results.append(Insight(
+                icon: "trophy.fill",
+                text: "Record at this hour! Best yield by this time of day: \(fmtWh(sh.todayWh))",
+                mood: .positive
+            ))
         }
 
         // --- Record peak solar power ---
@@ -172,33 +197,35 @@ struct VictronData: Codable {
             }
         }
 
-        // --- Yield vs yesterday ---
-        if let yesterday = previous.last, yesterday.solarYield > 0 {
-            let diff = ((today.solarYield - yesterday.solarYield) / yesterday.solarYield) * 100
+        // --- Yield vs yesterday at this hour ---
+        if let sh = resolvedSameHour, sh.available, let diff = sh.diffPercent, let yWh = sh.yesterdayWh {
             if diff > 20 {
                 results.append(Insight(
                     icon: "arrow.up.right",
-                    text: "Charged \(Int(diff))% more than yesterday (\(fmtWh(today.solarYield)) vs \(fmtWh(yesterday.solarYield)))",
+                    text: "Charged \(Int(diff))% more than yesterday at this hour (\(fmtWh(sh.todayWh)) vs \(fmtWh(yWh)))",
                     mood: .positive
                 ))
             } else if diff < -20 {
                 results.append(Insight(
                     icon: "arrow.down.right",
-                    text: "Charged \(Int(abs(diff)))% less than yesterday (\(fmtWh(today.solarYield)) vs \(fmtWh(yesterday.solarYield)))",
+                    text: "Charged \(Int(abs(diff)))% less than yesterday at this hour (\(fmtWh(sh.todayWh)) vs \(fmtWh(yWh)))",
                     mood: .negative
                 ))
             }
         }
 
-        // --- Consecutive declining days ---
-        if stats.count >= 3 {
+        // --- Consecutive declining days (today only via same-hour; never unfinished vs full day) ---
+        if previous.count >= 2 {
             var decliningDays = 0
-            for i in stride(from: stats.count - 1, through: 1, by: -1) {
-                if stats[i].solarYield < stats[i - 1].solarYield {
+            for i in stride(from: previous.count - 1, through: 1, by: -1) {
+                if previous[i].solarYield < previous[i - 1].solarYield {
                     decliningDays += 1
                 } else {
                     break
                 }
+            }
+            if let sh = resolvedSameHour, sh.available, let yWh = sh.yesterdayWh, sh.todayWh < yWh {
+                decliningDays += 1
             }
             if decliningDays >= 2 {
                 results.append(Insight(
@@ -263,24 +290,20 @@ struct VictronData: Codable {
             ))
         }
 
-        // --- Weekly average comparison ---
-        if stats.count >= 8 {
-            let weekAvg = stats.dropLast().suffix(7).map(\.solarYield).reduce(0, +) / 7
-            if weekAvg > 0 {
-                let ratio = today.solarYield / weekAvg
-                if ratio > 1.5 {
-                    results.append(Insight(
-                        icon: "star.fill",
-                        text: "Today is \(Int((ratio - 1) * 100))% above your weekly average (\(fmtWh(weekAvg))/day)",
-                        mood: .positive
-                    ))
-                } else if ratio < 0.5 && today.solarYield > 0 {
-                    results.append(Insight(
-                        icon: "cloud.fill",
-                        text: "Today is \(Int((1 - ratio) * 100))% below your weekly average (\(fmtWh(weekAvg))/day)",
-                        mood: .negative
-                    ))
-                }
+        // --- Weekly average at this hour (completed days only; never punish an unfinished morning) ---
+        if let sh = resolvedSameHour, let weekAvg = sh.weekAvgWh, weekAvg > 0, let weekDiff = sh.weekDiffPercent {
+            if weekDiff > 50 {
+                results.append(Insight(
+                    icon: "star.fill",
+                    text: "At this hour, today is \(Int(weekDiff))% above your weekly average (\(fmtWh(weekAvg)))",
+                    mood: .positive
+                ))
+            } else if weekDiff < -50 && sh.todayWh > 0 {
+                results.append(Insight(
+                    icon: "cloud.fill",
+                    text: "At this hour, today is \(Int(abs(weekDiff)))% below your weekly average (\(fmtWh(weekAvg)))",
+                    mood: .negative
+                ))
             }
         }
 
@@ -372,5 +395,111 @@ struct VictronData: Codable {
             return String(format: "%.0f Ah", ah)
         }
         return String(format: "%.1f Ah", ah)
+    }
+}
+
+extension VictronData.SameHour {
+    private static let maxSampleAgeMin = 60
+    private static let maxIntegrationGapMin = 30
+    private static let minCompareWh = 50.0
+    private static let minWeekDays = 3
+
+    private struct HistoryFile: Codable {
+        let days: [String: HistoryDay]
+    }
+
+    private struct HistoryDay: Codable {
+        let timeseries: [HistoryPoint]?
+        let solar_yield_max: Double?
+    }
+
+    private struct HistoryPoint: Codable {
+        let t: String
+        let solar: Double?
+        let yield: Double?
+    }
+
+    static func compute(todayWh: Double, now: Date = Date()) -> VictronData.SameHour? {
+        let url = DashboardFiles.directory.appendingPathComponent("ble-history.json")
+        guard let raw = try? Data(contentsOf: url),
+              let file = try? JSONDecoder().decode(HistoryFile.self, from: raw)
+        else { return nil }
+
+        let calendar = Calendar.current
+        let todayIso = isoDate(now, calendar: calendar)
+        let clock = String(format: "%02d:%02d", calendar.component(.hour, from: now), calendar.component(.minute, from: now))
+        let yesterdayIso = isoDate(calendar.date(byAdding: .day, value: -1, to: now) ?? now, calendar: calendar)
+
+        let yHit = yieldAtClock(file.days[yesterdayIso], clock: clock)
+        let yesterdayWh = yHit?.wh
+        let diff = yesterdayWh.flatMap { pctDiff(today: todayWh, other: $0) }
+
+        let allPrior = file.days.keys.filter { $0 < todayIso }.sorted()
+        let weekDates = Set(allPrior.suffix(7))
+        var recordYields: [Double] = []
+        var weekYields: [Double] = []
+        for dayIso in allPrior {
+            guard let hit = yieldAtClock(file.days[dayIso], clock: clock), hit.wh >= minCompareWh else { continue }
+            recordYields.append(hit.wh)
+            if weekDates.contains(dayIso) { weekYields.append(hit.wh) }
+        }
+        let weekAvg = weekYields.count >= minWeekDays ? weekYields.reduce(0, +) / Double(weekYields.count) : nil
+        let weekDiff = weekAvg.flatMap { pctDiff(today: todayWh, other: $0) }
+        let recordWh = recordYields.max()
+        let isRecord = recordWh != nil && recordYields.count >= 2 && todayWh >= minCompareWh && todayWh > (recordWh ?? .infinity)
+
+        return VictronData.SameHour(
+            clock: clock,
+            todayWh: (todayWh * 10).rounded() / 10,
+            yesterdayWh: yesterdayWh.map { ($0 * 10).rounded() / 10 },
+            yesterdayAt: yHit?.at,
+            diffPercent: diff.map { ($0 * 10).rounded() / 10 },
+            available: diff != nil,
+            weekAvgWh: weekAvg.map { ($0 * 10).rounded() / 10 },
+            weekDiffPercent: weekDiff.map { ($0 * 10).rounded() / 10 },
+            weekDays: weekAvg != nil ? weekYields.count : 0,
+            recordWh: recordWh.map { ($0 * 10).rounded() / 10 },
+            isRecord: isRecord
+        )
+    }
+
+    private static func isoDate(_ date: Date, calendar: Calendar) -> String {
+        let c = calendar.dateComponents([.year, .month, .day], from: date)
+        return String(format: "%04d-%02d-%02d", c.year ?? 0, c.month ?? 0, c.day ?? 0)
+    }
+
+    private static func parseMinutes(_ t: String) -> Int? {
+        let parts = t.split(separator: ":")
+        guard parts.count >= 2, let h = Int(parts[0]), let m = Int(parts[1].prefix(2)) else { return nil }
+        return h * 60 + m
+    }
+
+    private static func pctDiff(today: Double, other: Double) -> Double? {
+        guard other >= minCompareWh else { return nil }
+        return ((today - other) / other) * 100
+    }
+
+    private static func yieldAtClock(_ day: HistoryDay?, clock: String) -> (wh: Double, at: String)? {
+        guard let day, let clockM = parseMinutes(clock) else { return nil }
+        let eligible = (day.timeseries ?? []).filter { point in
+            guard let minutes = parseMinutes(point.t) else { return false }
+            return minutes <= clockM
+        }
+        guard let last = eligible.last, let lastM = parseMinutes(last.t), clockM - lastM <= maxSampleAgeMin else { return nil }
+        if let snapped = last.yield { return (snapped, last.t) }
+        guard eligible.count >= 2 else { return nil }
+        var total = 0.0
+        var used = 0
+        for i in 1..<eligible.count {
+            guard let t0 = parseMinutes(eligible[i - 1].t), let t1 = parseMinutes(eligible[i].t) else { continue }
+            let dt = t1 - t0
+            if dt <= 0 || dt > maxIntegrationGapMin { continue }
+            let w0 = eligible[i - 1].solar ?? 0
+            let w1 = eligible[i].solar ?? 0
+            total += (w0 + w1) / 2 * (Double(dt) / 60)
+            used += 1
+        }
+        guard used > 0 else { return nil }
+        return (total, last.t)
     }
 }

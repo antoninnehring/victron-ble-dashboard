@@ -18,9 +18,10 @@ import { formatKwh, whToKwh } from "@/lib/energy";
 
 export function DailyComparisonChart({ dailyStats }: { dailyStats: DailyStats[] }) {
   const last7 = dailyStats.slice(-7);
+  const completed = last7.filter((d) => !isToday(parseISO(d.date)));
   const avg =
-    last7.length > 0
-      ? last7.reduce((s, d) => s + whToKwh(d.solarYield), 0) / last7.length
+    completed.length > 0
+      ? completed.reduce((s, d) => s + whToKwh(d.solarYield), 0) / completed.length
       : 0;
 
   const chartData = last7.map((d) => {
@@ -40,10 +41,10 @@ export function DailyComparisonChart({ dailyStats }: { dailyStats: DailyStats[] 
   return (
     <div className="bg-gray-900 border border-gray-800 rounded-2xl p-5">
       <h3 className="text-sm font-medium text-gray-400 mb-1">
-        Daily Comparison
+        Daily comparison (this Mac)
       </h3>
       <p className="text-xs text-gray-600 mb-4">
-        7-day avg: {formatKwh(avg, 1)} kWh
+        7-day avg of completed days: {formatKwh(avg, 1)} kWh · today is yield so far
       </p>
       <ResponsiveContainer width="100%" height={280}>
         <BarChart data={chartData}>

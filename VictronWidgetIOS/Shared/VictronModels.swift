@@ -7,6 +7,7 @@ struct VictronData: Codable {
     let todayEnergy: TodayEnergy
     let lastUpdated: Double
     let deviceCount: Int
+    let sameHour: SameHour?
 
     struct TodayEnergy: Codable {
         let chargedAh: Double
@@ -14,12 +15,15 @@ struct VictronData: Codable {
         let dcdcAh: Double
         let solarYield: Double
         let consumedAhNet: Double
+        let acInWh: Double?
+        let acOutWh: Double?
     }
 
     struct Overview: Codable {
         let battery: Battery
         let solar: Solar
         let inverter: Inverter
+        let dcdc: DcDc?
         let alarm: String
         let devices: [String: DeviceInfo]
     }
@@ -38,17 +42,35 @@ struct VictronData: Codable {
     struct Solar: Codable {
         let power: Double
         let yieldToday: Double
+        let loadA: Double?
     }
 
     struct Inverter: Codable {
         let ac_power: Double
+        let ac_in_power: Double?
+        let ac_in_state: String?
+        let state: String?
+        let ac_voltage: Double?
+        let ac_current: Double?
+    }
+
+    struct DcDc: Codable {
+        let power: Double?
+        let input_voltage: Double?
+        let output_voltage: Double?
+        let output_current: Double?
+        let state: String?
     }
 
     struct DeviceInfo: Codable {
         let address: String
         let name: String
         let last_seen: Double
-        let fields: [String]
+        let fields: [String]?
+        let type: String?
+        let typeLabel: String?
+        let model: String?
+        let summary: String?
     }
 
     struct DailyStat: Codable {
@@ -68,6 +90,7 @@ struct VictronData: Codable {
         let solar: Double
         let current: Double
         let soc: Double
+        let yield: Double?
         var id: String { t }
     }
 
@@ -87,12 +110,23 @@ struct VictronData: Codable {
     var solar: Solar { overview.solar }
     var netPower: Double { battery.power }
 
+    struct SameHour: Codable {
+        let clock: String
+        let todayWh: Double
+        let yesterdayWh: Double?
+        let yesterdayAt: String?
+        let diffPercent: Double?
+        let available: Bool
+        let weekAvgWh: Double?
+        let weekDiffPercent: Double?
+        let weekDays: Int?
+        let recordWh: Double?
+        let isRecord: Bool?
+    }
+
     var yieldDiffPercent: Double? {
-        guard dailyStats.count >= 2 else { return nil }
-        let today = dailyStats[dailyStats.count - 1]
-        let yesterday = dailyStats[dailyStats.count - 2]
-        guard yesterday.solarYield > 0 else { return nil }
-        return ((today.solarYield - yesterday.solarYield) / yesterday.solarYield) * 100
+        guard let sameHour, sameHour.available, let diff = sameHour.diffPercent else { return nil }
+        return diff
     }
 }
 

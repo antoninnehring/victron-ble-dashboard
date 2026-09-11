@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { readFileSync } from "fs";
 import { join } from "path";
 import { whToKwh } from "@/lib/energy";
+import { resolveSiteLocation } from "@/lib/site-location";
 import {
   buildEstimate,
   clearSkyDayKwhM2,
@@ -97,19 +98,17 @@ export async function GET(request: Request) {
   const url = new URL(request.url);
   const qLat = parseNumber(url.searchParams.get("lat"));
   const qLon = parseNumber(url.searchParams.get("lon"));
-  const envLat = parseNumber(process.env.SITE_LAT ?? null);
-  const envLon = parseNumber(process.env.SITE_LON ?? null);
-
-  const lat = qLat ?? envLat;
-  const lon = qLon ?? envLon;
-  if (lat == null || lon == null || Math.abs(lat) > 90 || Math.abs(lon) > 180) {
+  const site = await resolveSiteLocation(qLat, qLon);
+  if (!site) {
     return NextResponse.json({
       needsLocation: true,
-      message: "Set SITE_LAT and SITE_LON, or allow location in the browser.",
+      message: "Could not resolve site location. Set SITE_LAT and SITE_LON in .env.local or victron-config.json.",
     });
   }
 
-  const locationSource = qLat != null ? "device" : "config";
+  const lat = site.lat;
+  const lon = site.lon;
+  const locationSource = site.source;
 
   try {
     const weather = await fetchWeather(lat, lon);
@@ -228,6 +227,7 @@ export async function GET(request: Request) {
         latitude: weather.latitude,
         longitude: weather.longitude,
         timezone: timeZone,
+        label: site.label,
         source: locationSource,
       },
       todayIso,

@@ -1,0 +1,17 @@
+{
+  "installationName": "Van",
+  "devices": [
+    {
+      "address": "AA:BB:CC:DD:EE:FF",
+      "key": "0123456789abcdef0123456789abcdef",
+      "name": "SmartShunt",
+      "role": "bms"
+    },
+    {
+      "address": "11:22:33:44:55:66",
+      "key": "0123456789abcdef0123456789abcdef",
+      "name": "SmartSolar",
+      "role": "solar"
+    }
+  ]
+}

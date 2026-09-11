@@ -99,13 +99,25 @@ final class VictronStore: ObservableObject {
         ) { [weak self] _ in
             self?.restartFileWatch()
         }
+        NotificationCenter.default.addObserver(
+            forName: .installationDidChange, object: nil, queue: .main
+        ) { [weak self] _ in
+            self?.objectWillChange.send()
+            self?.refresh()
+        }
+    }
+
+    var installationTitle: String {
+        if let n = data?.installationName, !n.isEmpty { return n }
+        if let n = InstallationConfig.load()?.installationName, !n.isEmpty { return n }
+        return "Victron"
     }
 
     func refresh() {
         if let loaded = VictronData.load() {
             data = loaded
+            lastRefresh = Date()
         }
-        lastRefresh = Date()
     }
 
     private func restartFileWatch() {
@@ -147,6 +159,122 @@ final class VictronStore: ObservableObject {
     }
 }
 
+// MARK: - Weekly solar forecast
+
+final class ForecastStore: ObservableObject {
+    static let shared = ForecastStore()
+
+    @Published var days: [ForecastDay] = []
+    @Published var todayIso: String?
+    @Published var todayKwh: Double?
+    @Published var error: String?
+
+    var todayKwhText: String? {
+        guard let kwh = todayKwh else { return nil }
+        return String(format: "TODAY %.1f kWh", kwh)
+    }
+
+    private init() {
+        Task { await fetch() }
+        let t = Timer.scheduledTimer(withTimeInterval: 30 * 60, repeats: true) { [weak self] _ in
+            self?.refresh()
+        }
+        RunLoop.main.add(t, forMode: .common)
+    }
+
+    func refresh() {
+        Task { await fetch() }
+    }
+
+    private func fetch() async {
+        let bases = [
+            "http://127.0.0.1:3001",
+            "http://localhost:3001",
+            "http://127.0.0.1:3000",
+            "http://localhost:3000",
+        ]
+        for base in bases {
+            guard let url = URL(string: "\(base)/api/forecast") else { continue }
+            do {
+                let (data, response) = try await URLSession.shared.data(from: url)
+                guard let http = response as? HTTPURLResponse, http.statusCode == 200 else { continue }
+                let decoded = try JSONDecoder().decode(ForecastPayload.self, from: data)
+                await MainActor.run { apply(decoded) }
+                return
+            } catch {
+                continue
+            }
+        }
+        await MainActor.run {
+            if days.isEmpty {
+                self.error = "Dashboard offline — start it to load forecast"
+            }
+        }
+    }
+
+    private func apply(_ payload: ForecastPayload) {
+        if let err = payload.error {
+            error = payload.message ?? err
+            return
+        }
+        if payload.needsLocation == true, (payload.days ?? []).isEmpty {
+            error = payload.message ?? "Dashboard could not resolve site location"
+            return
+        }
+        error = nil
+        todayIso = payload.todayIso
+        todayKwh = payload.estimate?.todayKwh
+        days = payload.days ?? []
+    }
+}
+
+struct ForecastPayload: Codable {
+    var needsLocation: Bool?
+    var message: String?
+    var error: String?
+    var todayIso: String?
+    var estimate: ForecastEstimate?
+    var days: [ForecastDay]?
+}
+
+struct ForecastEstimate: Codable {
+    var todayKwh: Double?
+    var remainingKwh: Double?
+    var producedKwh: Double?
+}
+
+struct ForecastDay: Codable, Identifiable {
+    var date: String
+    var weatherCode: Int
+    var estimatedKwh: Double
+    var tempMax: Double?
+    var id: String { date }
+
+    var weekday: String {
+        let inFmt = DateFormatter()
+        inFmt.calendar = Calendar(identifier: .gregorian)
+        inFmt.locale = Locale(identifier: "en_US_POSIX")
+        inFmt.dateFormat = "yyyy-MM-dd"
+        guard let d = inFmt.date(from: date) else { return "" }
+        let out = DateFormatter()
+        out.locale = Locale(identifier: "en_US_POSIX")
+        out.dateFormat = "EEE"
+        return out.string(from: d).uppercased()
+    }
+
+    var symbol: String {
+        let c = weatherCode
+        if c == 0 || c == 1 { return "sun.max" }
+        if c == 2 { return "cloud.sun" }
+        if c == 3 { return "cloud" }
+        if c == 45 || c == 48 { return "cloud.fog" }
+        if (51...67).contains(c) || (80...82).contains(c) { return "cloud.rain" }
+        if (71...77).contains(c) || (85...86).contains(c) { return "cloud.snow" }
+        if c >= 95 { return "cloud.bolt.rain" }
+        return "cloud"
+    }
+}
+
 // MARK: - App
 
 @main
@@ -158,12 +286,19 @@ struct VictronApp: App {
     }
 }
 
+// MARK: - Panel size (16:9)
+
+private let panelWidth: CGFloat = 960
+private let panelHeight: CGFloat = 540
+private let panelPad: CGFloat = 16
+
 // MARK: - AppDelegate (colored NSStatusItem)
 
 final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private var statusItem: NSStatusItem!
     private let popover = NSPopover()
     private var cancellable: AnyCancellable?
+    private var wizardWindow: NSWindow?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -176,7 +311,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
 
         let hosting = NSHostingController(rootView: MenuBarView())
         hosting.sizingOptions = [.preferredContentSize]
+        hosting.preferredContentSize = NSSize(width: panelWidth, height: panelHeight)
         popover.contentViewController = hosting
+        popover.contentSize = NSSize(width: panelWidth, height: panelHeight)
         popover.behavior = .transient
         popover.delegate = self
 
@@ -184,26 +321,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         cancellable = VictronStore.shared.objectWillChange.sink { [weak self] _ in
             DispatchQueue.main.async { self?.updateButton() }
         }
+        NotificationCenter.default.addObserver(
+            forName: .openInstallationWizard, object: nil, queue: .main
+        ) { [weak self] _ in
+            self?.showWizard()
+        }
+        if !InstallationConfig.isConfigured {
+            DispatchQueue.main.async { [weak self] in self?.showWizard() }
+        }
     }
 
     private func updateButton() {
         guard let button = statusItem.button else { return }
         let store = VictronStore.shared
-        let isCharging: Bool
         let socText: String
 
+        let accentColor: NSColor
         if let d = store.data, !d.isStale {
-            isCharging = d.battery.power > 50
             socText = "\(Int(d.battery.soc))%"
+            if d.battery.power > 15 {
+                accentColor = NSColor(red: 0.035, green: 0.588, blue: 0.878, alpha: 1)
+            } else if d.battery.power < -15 {
+                accentColor = NSColor(red: 0.992, green: 0.482, blue: 0.227, alpha: 1)
+            } else {
+                accentColor = NSColor.secondaryLabelColor
+            }
         } else {
-            isCharging = false
             socText = "--"
+            accentColor = NSColor.secondaryLabelColor
         }
-
-        // Colored bolt icon
-        let accentColor: NSColor = isCharging
-            ? NSColor(red: 0.035, green: 0.588, blue: 0.878, alpha: 1)
-            : NSColor(red: 0.992, green: 0.482, blue: 0.227, alpha: 1)
 
         let config = NSImage.SymbolConfiguration(paletteColors: [accentColor])
         if let img = NSImage(systemSymbolName: "bolt.fill", accessibilityDescription: nil)?
@@ -220,6 +366,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     }
 
     @objc private func togglePopover() {
+        if !InstallationConfig.isConfigured {
+            showWizard()
+            return
+        }
         if popover.isShown {
             popover.performClose(nil)
         } else {
@@ -228,12 +378,43 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        showPopover()
+        if !InstallationConfig.isConfigured {
+            showWizard()
+        } else {
+            showPopover()
+        }
         return false
+    }
+
+    func showWizard() {
+        let configured = InstallationConfig.isConfigured
+        let root = SetupWizardView(
+            onComplete: { [weak self] in
+                self?.wizardWindow?.close()
+                VictronStore.shared.refresh()
+            },
+            onCancel: configured ? { [weak self] in self?.wizardWindow?.close() } : nil
+        )
+        let hosting = NSHostingController(rootView: root)
+        if let window = wizardWindow {
+            window.contentViewController = hosting
+            window.makeKeyAndOrderFront(nil)
+        } else {
+            let window = NSWindow(contentViewController: hosting)
+            window.title = "Installation"
+            window.styleMask = [.titled, .closable, .miniaturizable]
+            window.isReleasedWhenClosed = false
+            window.setContentSize(NSSize(width: 560, height: 640))
+            window.center()
+            wizardWindow = window
+            window.makeKeyAndOrderFront(nil)
+        }
+        NSApp.activate(ignoringOtherApps: true)
     }
 
     private func showPopover() {
         guard let button = statusItem.button else { return }
+        popover.contentSize = NSSize(width: panelWidth, height: panelHeight)
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
         popover.contentViewController?.view.window?.makeKey()
         NSApp.activate(ignoringOtherApps: true)
@@ -242,14 +423,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
 
 // MARK: - Panel
 
-private let panelWidth: CGFloat = 500
-private let panelPad: CGFloat = 20
-
 struct MenuBarView: View {
     @ObservedObject private var store = VictronStore.shared
+    @ObservedObject private var bluetooth = BluetoothStatus.shared
 
     var body: some View {
         VStack(spacing: 0) {
+            if bluetooth.isPoweredOff {
+                BluetoothOffBanner()
+            }
+            header
+            Divider()
             if let data = store.data {
                 PanelContent(data: data)
             } else {
@@ -260,38 +444,77 @@ struct MenuBarView: View {
                         .font(.system(size: 12))
                         .foregroundStyle(.secondary)
                 }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 48)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-
-            Divider()
-            HStack(spacing: 8) {
-                Circle().fill(Color.blue).frame(width: 5, height: 5)
-                Text(refreshAgo)
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-                Spacer()
-                Button { store.refresh() } label: {
-                    Image(systemName: "arrow.triangle.2.circlepath")
-                        .font(.system(size: 11))
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
-                Button { NSApplication.shared.terminate(nil) } label: {
-                    Text("Quit")
-                        .font(.system(size: 11))
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
-            }
-            .padding(.horizontal, panelPad)
-            .padding(.vertical, 10)
         }
-        .frame(width: panelWidth)
+        .frame(width: panelWidth, height: panelHeight)
         .background(
             ZStack { WindowAccessor(); VisualEffectBackground() }
         )
-        .onAppear { store.refresh() }
+        .onAppear {
+            store.refresh()
+            ForecastStore.shared.refresh()
+        }
+    }
+
+    private var header: some View {
+        HStack(spacing: 8) {
+            VictronLogo(height: 13)
+            Text(store.installationTitle)
+                .font(.hero(12))
+            if let data = store.data {
+                if let alarm = alarmText(data) {
+                    Text(alarm)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(Color.orange)
+                        .lineLimit(1)
+                } else if bluetooth.isPoweredOff {
+                    Text("Bluetooth off")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(Color.orange)
+                } else if data.isStale {
+                    Text("Offline")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(Color.orange)
+                }
+            }
+            Spacer()
+            Circle().fill(Color.blue).frame(width: 5, height: 5)
+            Text(refreshAgo)
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+            Button { store.refresh() } label: {
+                Image(systemName: "arrow.triangle.2.circlepath")
+                    .font(.system(size: 11))
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.secondary)
+            Button {
+                NotificationCenter.default.post(name: .openInstallationWizard, object: nil)
+            } label: {
+                Text("Edit")
+                    .font(.system(size: 11))
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.secondary)
+            Button { NSApplication.shared.terminate(nil) } label: {
+                Text("Quit")
+                    .font(.system(size: 11))
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, panelPad)
+        .padding(.vertical, 10)
+    }
+
+    private func alarmText(_ data: VictronData) -> String? {
+        let raw = data.overview.alarm.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !raw.isEmpty else { return nil }
+        switch raw.lowercased() {
+        case "ok", "no alarm", "none", "0": return nil
+        default: return raw
+        }
     }
 
     private var refreshAgo: String {
@@ -302,89 +525,111 @@ struct MenuBarView: View {
     }
 }
 
-// MARK: - Panel Content
+// MARK: - Panel Content (landscape)
 
 struct PanelContent: View {
     let data: VictronData
+    @ObservedObject private var forecast = ForecastStore.shared
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            header
-            Divider()
-            batterySection
-            Divider()
-            solarSection
-            Divider()
-            energySection
-            if data.timeseries.count >= 2 {
-                Divider()
-                chartSection
+        VStack(spacing: 0) {
+            HStack(alignment: .top, spacing: 0) {
+                inputColumn
+                VRule()
+                batteryColumn
+                VRule()
+                outputColumn
             }
-            if !data.insights.isEmpty {
-                Divider()
-                notesSection
+            .frame(height: 156)
+
+            Divider()
+
+            chartBlock
+                .frame(maxHeight: .infinity)
+
+            Divider()
+
+            forecastBlock
+                .frame(height: 86)
+
+            Divider()
+
+            HStack(alignment: .top, spacing: 0) {
+                notesBlock
+                VRule()
+                devicesBlock
             }
-            if !data.overview.devices.isEmpty {
-                Divider()
-                devicesSection
-            }
+            .frame(height: 96)
         }
     }
 
-    // MARK: Header
+    private var inputColumn: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            SectionLabel(title: "Input")
 
-    private var header: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
-            VictronLogo(height: 14)
-            Text("Mothership Powerplant")
-                .font(.hero(13))
-                .foregroundStyle(.primary)
-            Spacer()
-            if let alarm {
-                Text(alarm)
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(Color.orange)
-                    .lineLimit(1)
-            } else if data.isStale {
-                Text("Offline · \(timeAgo(data.lastUpdated))")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(Color.orange)
-            } else {
-                Text(timeAgo(data.lastUpdated))
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
+            HStack(alignment: .lastTextBaseline, spacing: 3) {
+                Text(data.isStale ? "--" : "\(Int(inputWatts.rounded()))")
+                    .font(.hero(36))
+                    .foregroundStyle(inputNumberColor)
+                    .monospacedDigit()
+                Text("W")
+                    .font(.heroLight(14))
+                    .foregroundStyle(.tertiary)
+            }
+
+            StatRow(
+                value: String(format: "%.2f", data.solar.yieldToday / 1000),
+                unit: "kWh",
+                label: "Yield",
+                accessory: yieldSub
+            )
+            if liveDcdcWatts > 40 {
+                StatRow(
+                    value: "\(Int(liveDcdcWatts.rounded()))",
+                    unit: "W",
+                    label: "DC-DC",
+                    color: .blue
+                )
+            } else if data.todayEnergy.dcdcAh > 0.3 {
+                StatRow(
+                    value: String(format: "%.1f", data.todayEnergy.dcdcAh),
+                    unit: "Ah",
+                    label: "DC-DC today",
+                    color: .blue
+                )
             }
         }
         .padding(.horizontal, panelPad)
-        .padding(.top, 16)
-        .padding(.bottom, 12)
+        .padding(.vertical, 12)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
-    // MARK: Battery
-
-    private var batterySection: some View {
-        VStack(alignment: .leading, spacing: 10) {
+    private var batteryColumn: some View {
+        VStack(alignment: .leading, spacing: 8) {
             SectionLabel(title: "Battery", trailing: data.isStale ? "Offline" : data.battery.state.lowercased().capitalized)
 
-            HStack(alignment: .lastTextBaseline, spacing: 4) {
+            HStack(alignment: .lastTextBaseline, spacing: 3) {
                 Text(data.isStale ? "--" : String(format: "%.1f", data.battery.soc))
-                    .font(.hero(64))
+                    .font(.hero(52))
                     .foregroundStyle(data.isStale ? .tertiary : .primary)
                     .monospacedDigit()
                 Text("%")
-                    .font(.heroLight(24))
+                    .font(.heroLight(20))
                     .foregroundStyle(.tertiary)
-                Spacer()
-                if let remaining {
-                    VStack(alignment: .trailing, spacing: 2) {
-                        Text(remaining)
-                            .font(.hero(18))
-                            .foregroundStyle(.primary)
-                        Text("REMAINING")
-                            .font(.system(size: 8, weight: .semibold))
-                            .tracking(0.8)
+                Spacer(minLength: 6)
+                VStack(alignment: .trailing, spacing: 1) {
+                    HStack(alignment: .lastTextBaseline, spacing: 3) {
+                        Text(data.isStale ? "--" : String(format: "%+.0f", data.battery.power))
+                            .font(.hero(22))
+                            .foregroundStyle(flowColor)
+                            .monospacedDigit()
+                        Text("W")
+                            .font(.system(size: 10))
                             .foregroundStyle(.tertiary)
                     }
+                    Text(data.isStale ? "--" : String(format: "%+.1fA", data.battery.current))
+                        .font(.system(size: 12, weight: .medium, design: .monospaced))
+                        .foregroundStyle(flowColor)
                 }
             }
 
@@ -393,116 +638,81 @@ struct PanelContent: View {
                     RoundedRectangle(cornerRadius: 3, style: .continuous)
                         .fill(.quaternary)
                     RoundedRectangle(cornerRadius: 3, style: .continuous)
-                        .fill(Color.blue)
+                        .fill(flow == .idle ? Color.blue.opacity(0.55) : flowColor)
                         .frame(width: geo.size.width * min(CGFloat(data.battery.soc / 100), 1))
                 }
             }
-            .frame(height: 6)
+            .frame(height: 5)
 
             HStack(spacing: 0) {
-                if data.isStale {
-                    Metric(value: "--", label: "Volts")
-                    Metric(value: "--", label: "Amps")
-                    Metric(value: "--", label: "Power")
-                    Metric(value: "--", label: "Temp")
-                } else {
-                    Metric(value: String(format: "%.1fV", data.battery.voltage), label: "Volts")
-                    Metric(value: String(format: "%.1fA", data.battery.current), label: "Amps")
-                    Metric(
-                        value: String(format: "%+.0fW", data.battery.power),
-                        label: "Power",
-                        color: data.battery.power >= 0 ? .blue : .orange
-                    )
-                    Metric(
-                        value: data.battery.temperature > 0 ? "\(Int(data.battery.temperature))°C" : "--",
-                        label: "Temp"
-                    )
-                }
-            }
-        }
-        .padding(.horizontal, panelPad)
-        .padding(.vertical, 14)
-    }
-
-    // MARK: Solar
-
-    private var solarSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            SectionLabel(title: "Solar")
-            HStack(alignment: .top, spacing: 0) {
-                StatCell(
-                    value: data.isStale ? "--" : "\(Int(data.solar.power))",
-                    unit: "W",
-                    label: "Output"
+                Metric(
+                    value: data.isStale ? "--" : String(format: "%.1fV", data.battery.voltage),
+                    label: "Volts"
                 )
-                StatCell(
-                    value: String(format: "%.2f", data.solar.yieldToday / 1000),
-                    unit: "kWh",
-                    label: "Yield",
-                    accessory: yieldSub
+                Metric(
+                    value: remaining ?? "—",
+                    label: "Remaining"
                 )
-                StatCell(
-                    value: peakSolar,
-                    unit: "W",
-                    label: "Peak"
+                Metric(
+                    value: data.isStale ? "—" : flowLabel,
+                    label: "State",
+                    color: flowColor
                 )
             }
         }
         .padding(.horizontal, panelPad)
-        .padding(.vertical, 14)
+        .padding(.vertical, 12)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
-    // MARK: Energy
-
-    private var energySection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            SectionLabel(title: "Energy today")
-            HStack(alignment: .top, spacing: 0) {
-                StatCell(
-                    value: String(format: "+%.1f", data.todayEnergy.chargedAh),
-                    unit: "Ah",
-                    label: "Charged",
-                    color: .blue
-                )
-                StatCell(
-                    value: String(format: "−%.1f", data.todayEnergy.dischargedAh),
-                    unit: "Ah",
-                    label: "Discharged"
-                )
-                if data.todayEnergy.dcdcAh > 0.3 {
-                    StatCell(
-                        value: String(format: "%.1f", data.todayEnergy.dcdcAh),
-                        unit: "Ah",
-                        label: "DC-DC"
-                    )
-                }
-                if abs(data.overview.inverter.ac_power) > 1 {
-                    StatCell(
-                        value: String(format: "%.0f", data.overview.inverter.ac_power),
-                        unit: "W",
-                        label: "AC load"
-                    )
-                } else if abs(data.todayEnergy.consumedAhNet) > 1 {
-                    let net = data.todayEnergy.consumedAhNet
-                    StatCell(
-                        value: String(format: "%+.1f", -net),
-                        unit: "Ah",
-                        label: "Net",
-                        color: net < 0 ? .blue : .orange
-                    )
-                }
-            }
-        }
-        .padding(.horizontal, panelPad)
-        .padding(.vertical, 14)
-    }
-
-    // MARK: Chart
-
-    private var chartSection: some View {
+    private var outputColumn: some View {
         VStack(alignment: .leading, spacing: 8) {
+            SectionLabel(title: "Output")
+
+            HStack(alignment: .lastTextBaseline, spacing: 3) {
+                Text(data.isStale ? "--" : "\(Int(loadWatts.rounded()))")
+                    .font(.hero(36))
+                    .foregroundStyle(outputNumberColor)
+                    .monospacedDigit()
+                Text("W")
+                    .font(.heroLight(14))
+                    .foregroundStyle(.tertiary)
+            }
+
+            if abs(data.overview.inverter.ac_power) > 1 {
+                StatRow(
+                    value: String(format: "%.0f", abs(data.overview.inverter.ac_power)),
+                    unit: "W",
+                    label: "AC load",
+                    color: .orange
+                )
+            }
+            if flow == .discharging {
+                StatRow(
+                    value: String(format: "%.0f", abs(data.battery.power)),
+                    unit: "W",
+                    label: "From battery",
+                    color: .orange
+                )
+            }
+            if data.todayEnergy.dischargedAh > 0.3 {
+                StatRow(
+                    value: String(format: "%.1f", data.todayEnergy.dischargedAh),
+                    unit: "Ah",
+                    label: "Used today",
+                    color: .orange
+                )
+            }
+        }
+        .padding(.horizontal, panelPad)
+        .padding(.vertical, 12)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    private var chartBlock: some View {
+        VStack(alignment: .leading, spacing: 4) {
             HStack {
-                Text("TODAY")
+                Text("TODAY · THIS MAC")
                     .font(.system(size: 9, weight: .semibold))
                     .tracking(1.4)
                     .foregroundStyle(.tertiary)
@@ -511,75 +721,186 @@ struct PanelContent: View {
                 ChartKey(color: .orange, title: "Current")
             }
             .padding(.horizontal, panelPad)
+            .padding(.top, 8)
 
-            IntradayChart(points: data.timeseries)
+            if data.timeseries.count >= 2 {
+                IntradayChart(points: data.timeseries)
+                    .padding(.bottom, 4)
+            } else {
+                Text("No samples yet")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.tertiary)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
         }
-        .padding(.top, 12)
-        .padding(.bottom, 10)
     }
 
-    // MARK: Notes
-
-    private var notesSection: some View {
+    private var forecastBlock: some View {
         VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("FORECAST")
+                    .font(.system(size: 9, weight: .semibold))
+                    .tracking(1.4)
+                    .foregroundStyle(.tertiary)
+                Spacer()
+                if let today = forecast.todayKwhText {
+                    Text(today)
+                        .font(.system(size: 11, weight: .medium, design: .monospaced))
+                        .foregroundStyle(Color.blue)
+                }
+            }
+            if let err = forecast.error, forecast.days.isEmpty {
+                Text(err)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.tertiary)
+            } else if forecast.days.isEmpty {
+                Text("Loading week…")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.tertiary)
+            } else {
+                HStack(spacing: 0) {
+                    ForEach(forecast.days.prefix(7)) { day in
+                        ForecastDayCell(day: day, isToday: day.date == forecast.todayIso)
+                    }
+                }
+            }
+        }
+        .padding(.horizontal, panelPad)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    private var notesBlock: some View {
+        VStack(alignment: .leading, spacing: 6) {
             SectionLabel(title: "Notes")
-            VStack(alignment: .leading, spacing: 8) {
-                ForEach(Array(data.insights.prefix(3))) { insight in
-                    HStack(alignment: .top, spacing: 8) {
-                        Text(moodMark(insight.mood))
-                            .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                            .foregroundStyle(moodColor(insight.mood))
-                            .frame(width: 12, alignment: .leading)
-                        Text(insight.text)
-                            .font(.system(size: 12))
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
+            if data.insights.isEmpty {
+                Text("Quiet")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.tertiary)
+            } else {
+                ScrollView(.vertical, showsIndicators: false) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        ForEach(Array(data.insights.prefix(3))) { insight in
+                            HStack(alignment: .top, spacing: 6) {
+                                Text(moodMark(insight.mood))
+                                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                                    .foregroundStyle(moodColor(insight.mood))
+                                    .frame(width: 10, alignment: .leading)
+                                Text(insight.text)
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(2)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                        }
                     }
                 }
             }
         }
         .padding(.horizontal, panelPad)
-        .padding(.vertical, 14)
+        .padding(.vertical, 10)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
-    // MARK: Devices
-
-    private var devicesSection: some View {
+    private var devicesBlock: some View {
         let devs = data.overview.devices.values.sorted(by: { $0.name < $1.name })
-        return VStack(alignment: .leading, spacing: 8) {
+        return VStack(alignment: .leading, spacing: 6) {
             SectionLabel(title: "Devices", trailing: "\(devs.count)")
-            VStack(alignment: .leading, spacing: 7) {
-                ForEach(devs, id: \.address) { dev in
-                    let age = Date().timeIntervalSince1970 - dev.last_seen
-                    let alive = age < 120
-                    HStack(spacing: 8) {
-                        Circle()
-                            .fill(alive ? Color.blue : .secondary.opacity(0.28))
-                            .frame(width: 6, height: 6)
-                        Text(dev.name)
-                            .font(.system(size: 12))
-                            .foregroundStyle(alive ? .primary : .secondary)
-                        Spacer()
-                        Text(alive ? "\(Int(age))s ago" : "Offline")
-                            .font(.system(size: 11, design: .monospaced))
-                            .foregroundStyle(.tertiary)
+            if devs.isEmpty {
+                Text("None")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.tertiary)
+            } else {
+                ScrollView(.vertical, showsIndicators: false) {
+                    VStack(alignment: .leading, spacing: 5) {
+                        ForEach(devs, id: \.address) { dev in
+                            let age = Date().timeIntervalSince1970 - dev.last_seen
+                            let alive = age < 120
+                            HStack(spacing: 8) {
+                                Circle()
+                                    .fill(alive ? Color.blue : .secondary.opacity(0.28))
+                                    .frame(width: 5, height: 5)
+                                VStack(alignment: .leading, spacing: 1) {
+                                    Text(dev.name)
+                                        .font(.system(size: 11))
+                                        .foregroundStyle(alive ? .primary : .secondary)
+                                        .lineLimit(1)
+                                    if let summary = dev.summary, !summary.isEmpty {
+                                        Text(summary)
+                                            .font(.system(size: 10))
+                                            .foregroundStyle(.tertiary)
+                                            .lineLimit(1)
+                                    } else if let label = dev.typeLabel, !label.isEmpty {
+                                        Text(label)
+                                            .font(.system(size: 10))
+                                            .foregroundStyle(.tertiary)
+                                            .lineLimit(1)
+                                    }
+                                }
+                                Spacer()
+                                Text(alive ? "\(Int(age))s" : "Off")
+                                    .font(.system(size: 10, design: .monospaced))
+                                    .foregroundStyle(.tertiary)
+                            }
+                        }
                     }
                 }
             }
         }
         .padding(.horizontal, panelPad)
-        .padding(.vertical, 14)
+        .padding(.vertical, 10)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
-    // MARK: Derived
+    private enum Flow { case charging, discharging, idle }
 
-    private var alarm: String? {
-        let raw = data.overview.alarm.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !raw.isEmpty else { return nil }
-        switch raw.lowercased() {
-        case "ok", "no alarm", "none", "0": return nil
-        default: return raw
+    private var flow: Flow {
+        if data.isStale { return .idle }
+        if data.battery.power > 15 { return .charging }
+        if data.battery.power < -15 { return .discharging }
+        return .idle
+    }
+
+    private var flowColor: Color {
+        switch flow {
+        case .charging: return .blue
+        case .discharging: return .orange
+        case .idle: return .secondary
         }
+    }
+
+    private var flowLabel: String {
+        switch flow {
+        case .charging: return "Charging"
+        case .discharging: return "Discharging"
+        case .idle: return "Idle"
+        }
+    }
+
+    private var liveDcdcWatts: Double {
+        guard !data.isStale, data.battery.power > 50 else { return 0 }
+        let extra = data.battery.power - max(data.solar.power, 0)
+        return extra > 40 ? extra : 0
+    }
+
+    private var inputWatts: Double {
+        guard !data.isStale else { return 0 }
+        return max(data.solar.power, 0) + liveDcdcWatts
+    }
+
+    private var loadWatts: Double {
+        guard !data.isStale else { return 0 }
+        return max(0, max(data.solar.power, 0) + liveDcdcWatts - data.battery.power)
+    }
+
+    private var inputNumberColor: Color {
+        if data.isStale || inputWatts < 5 { return .secondary }
+        return .blue
+    }
+
+    private var outputNumberColor: Color {
+        if data.isStale || loadWatts < 5 { return .secondary }
+        return .orange
     }
 
     private var remaining: String? {
@@ -591,15 +912,10 @@ struct PanelContent: View {
         return "\(total)m"
     }
 
-    private var peakSolar: String {
-        guard !data.isStale, let peak = data.dailyStats.last?.solarPeakPower, peak > 0 else { return "--" }
-        return "\(Int(peak))"
-    }
-
     private var yieldSub: String? {
         guard let diff = data.yieldDiffPercent else { return nil }
         let sign = diff >= 0 ? "+" : ""
-        return "\(sign)\(Int(diff))%"
+        return "\(sign)\(Int(diff))% vs this hour"
     }
 
     private func moodMark(_ mood: VictronData.Insight.Mood) -> String {
@@ -618,16 +934,40 @@ struct PanelContent: View {
         case .neutral: return .secondary
         }
     }
+}
 
-    func timeAgo(_ ms: Double) -> String {
-        let secs = Int(Date().timeIntervalSince1970 - ms / 1000)
-        if secs < 60 { return "\(secs)s ago" }
-        if secs < 3600 { return "\(secs / 60)m ago" }
-        return "\(secs / 3600)h ago"
+struct VRule: View {
+    var body: some View {
+        Rectangle()
+            .fill(Color.primary.opacity(0.16))
+            .frame(width: 1)
     }
 }
 
-// MARK: - Components
+struct ForecastDayCell: View {
+    let day: ForecastDay
+    let isToday: Bool
+
+    var body: some View {
+        VStack(spacing: 3) {
+            Text(isToday ? "TODAY" : day.weekday)
+                .font(.system(size: 8, weight: .semibold))
+                .tracking(0.6)
+                .foregroundStyle(isToday ? Color.blue : Color.secondary.opacity(0.7))
+            Image(systemName: day.symbol)
+                .font(.system(size: 13, weight: .light))
+                .foregroundStyle(isToday ? Color.blue : Color.secondary)
+                .frame(height: 16)
+            Text(String(format: "%.1f", day.estimatedKwh))
+                .font(.system(size: 11, weight: .medium, design: .monospaced))
+                .foregroundStyle(isToday ? Color.blue : Color.primary)
+            Text("kWh")
+                .font(.system(size: 8))
+                .foregroundStyle(Color.secondary.opacity(0.7))
+        }
+        .frame(maxWidth: .infinity)
+    }
+}
 
 struct SectionLabel: View {
     let title: String
@@ -658,7 +998,7 @@ struct Metric: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(value)
-                .font(.system(size: 13, weight: .medium, design: .monospaced))
+                .font(.system(size: 12, weight: .medium, design: .monospaced))
                 .foregroundStyle(color ?? Color.primary)
             Text(label.uppercased())
                 .font(.system(size: 8, weight: .semibold))
@@ -669,7 +1009,7 @@ struct Metric: View {
     }
 }
 
-struct StatCell: View {
+struct StatRow: View {
     let value: String
     let unit: String
     let label: String
@@ -677,17 +1017,14 @@ struct StatCell: View {
     var color: Color? = nil
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            HStack(alignment: .lastTextBaseline, spacing: 3) {
+            HStack(alignment: .lastTextBaseline, spacing: 4) {
                 Text(value)
-                    .font(.hero(26))
+                    .font(.hero(18))
                     .foregroundStyle(color ?? Color.primary)
                     .monospacedDigit()
                 Text(unit)
                     .font(.system(size: 10))
                     .foregroundStyle(.tertiary)
-            }
-            HStack(spacing: 5) {
                 Text(label.uppercased())
                     .font(.system(size: 9, weight: .semibold))
                     .tracking(0.7)
@@ -697,9 +1034,8 @@ struct StatCell: View {
                         .font(.system(size: 10, weight: .semibold))
                         .foregroundStyle(accessory.hasPrefix("+") ? Color.blue : Color.orange)
                 }
+                Spacer(minLength: 0)
             }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -717,8 +1053,6 @@ struct ChartKey: View {
         }
     }
 }
-
-// MARK: - Chart — edge to edge, no Y axis
 
 struct IntradayChart: View {
     let points: [VictronData.TimePoint]
@@ -764,7 +1098,7 @@ struct IntradayChart: View {
                 .lineStyle(StrokeStyle(lineWidth: 0.5))
         }
         .chartXAxis {
-            AxisMarks(values: .automatic(desiredCount: 5)) { value in
+            AxisMarks(values: .automatic(desiredCount: 6)) { value in
                 if let idx = value.as(Int.self), idx < points.count {
                     AxisValueLabel(anchor: .top) {
                         Text(points[idx].t)
@@ -779,6 +1113,5 @@ struct IntradayChart: View {
         .chartPlotStyle { plot in
             plot.padding(.horizontal, 0)
         }
-        .frame(height: 148)
     }
 }
