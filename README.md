@@ -1,42 +1,30 @@
 # Victron BLE dashboard
 
-Live numbers from your Victron solar and battery gear, over Bluetooth. No Cerbo/GX box. No VRM account.
+Live battery and solar numbers from your Victron kit, over Bluetooth. No Cerbo/GX. No VRM account.
 
-You get a **macOS menu-bar panel** and a **local web dashboard**. It also guesses today’s and this week’s solar from the weather. History is only the days this Mac was actually scanning — not VictronConnect’s stored trends.
+A **macOS menu-bar app** and a **local web dashboard** for van, boat, and cabin Instant Readout kits (SmartSolar, BMV / SmartShunt, BMS, MultiPlus, and similar) with a Mac nearby.
 
-This is **not** a VictronConnect replacement. You still copy Instant Readout keys from VictronConnect once.
-
-## What it looks like
-
-The menu extra is a bolt + SOC. **Blue** when the battery is charging, **orange** when it’s discharging.
+The menu-bar bolt is **blue when charging** and **orange when discharging**.
 
 <p>
-  <img src="docs/screenshots/menubar-charging.png" alt="Menu extra while charging: blue bolt and 44%" width="220">
-  <img src="docs/screenshots/menubar-live.png" alt="Live menu extra while discharging: orange bolt and 44%" width="220">
+  <img src="docs/screenshots/menubar-charging.png" alt="Menu bar icon while charging (blue bolt)" width="220" />
+  <img src="docs/screenshots/menubar-live.png" alt="Menu bar icon while discharging (orange bolt)" width="220" />
 </p>
 
-Charging (blue) is the same extra, tinted — this Mac was discharging when the shots were taken, so there is no live charging capture. The orange one is live.
+Charging (blue) · Discharging (orange, live)
 
-The 16:9 panel (Input / Battery / Output + forecast). Live, discharging:
+![16:9 menu-bar panel](docs/screenshots/panel.png)
 
-![macOS panel](docs/screenshots/panel.png)
+![Local web dashboard](docs/screenshots/dashboard.png)
 
-The web dashboard on this Mac (`localhost`):
+This is not a VictronConnect replacement. Copy Instant Readout keys from VictronConnect once. Keys stay on the Mac.
 
-![Web dashboard](docs/screenshots/dashboard.png)
+## Platforms
 
-## Who it’s for
-
-People with an off-grid, van, boat, or cabin Victron kit (SmartSolar, BMV / SmartShunt, BMS, MultiPlus, and similar) who keep a **Mac nearby** that can hear the devices.
-
-## Platform
-
-- **macOS** — this is the app. Menubar widget + Python BLE reader.
-- **Browser** — dashboard at `http://localhost:3000` on that Mac.
-- **iOS (optional)** — Lock Screen / Home Screen widget that talks to the Mac on your LAN.
-- **Not** a first-class Windows or Linux app.
-
-Encryption keys stay on the Mac. Nothing is sent to Victron’s cloud.
+- **macOS** — menu-bar widget + Python BLE reader
+- **Browser** — dashboard at `http://localhost:3000` on that Mac
+- **iOS (optional)** — Lock Screen / Home Screen widget on your LAN
+- Not a first-class Windows or Linux app
 
 ## Setup
 
@@ -49,13 +37,13 @@ npm install
 pip3 install -r ble-reader/requirements.txt
 ```
 
-1. **Keys** — VictronConnect → device → Settings → Product Info → Instant Readout. Quit VictronConnect after that so it doesn’t steal Bluetooth.
+1. **Keys** — VictronConnect → device → Settings → Product Info → Instant Readout. Then quit VictronConnect so it doesn’t steal Bluetooth.
 2. **Reader** — `python3 ble-reader/reader.py` (leave it running).
 3. **Dashboard** — `npm run dev`, then open [http://localhost:3000](http://localhost:3000). A setup wizard scans for devices and saves them to `victron-config.json` (gitignored).
 
-That’s it. Re-open the wizard later with **Edit installation**, or **Edit** in the menu-bar panel.
+That’s it. Re-open the wizard with **Edit installation**, or **Edit** in the menu-bar panel.
 
-### Menu bar (macOS)
+### Menu bar
 
 ```bash
 cd VictronWidget
