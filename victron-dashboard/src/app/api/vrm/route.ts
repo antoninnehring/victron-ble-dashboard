@@ -135,6 +135,8 @@ function generateAlerts(data: BLEData) {
   return alerts;
 }
 
+const NO_STORE = { "Cache-Control": "no-store, max-age=0" };
+
 export async function GET() {
   const dataFile = join(process.cwd(), "ble-data.json");
 
@@ -143,16 +145,20 @@ export async function GET() {
     const data: BLEData = JSON.parse(raw);
     const alerts = generateAlerts(data);
 
-    const newestSeen = Math.max(
-      ...Object.values(data.overview.devices).map((d) => d.last_seen)
+    const lastSeens = Object.values(data.overview?.devices ?? {}).map(
+      (d) => d.last_seen
     );
+    const newestSeen = lastSeens.length ? Math.max(...lastSeens) : 0;
     const devicesStale = (Date.now() / 1000 - newestSeen) > 120;
 
-    return NextResponse.json({
-      ...data,
-      alerts,
-      devicesStale,
-    });
+    return NextResponse.json(
+      {
+        ...data,
+        alerts,
+        devicesStale,
+      },
+      { headers: NO_STORE }
+    );
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === "ENOENT") {
       return NextResponse.json(
@@ -160,12 +166,12 @@ export async function GET() {
           error: "no-ble-data",
           message: "No BLE data file found. Start the BLE reader first: cd ble-reader && python3 reader.py",
         },
-        { status: 503 }
+        { status: 503, headers: NO_STORE }
       );
     }
     return NextResponse.json(
       { error: "read-error", message: String(err) },
-      { status: 500 }
+      { status: 500, headers: NO_STORE }
     );
   }
 }

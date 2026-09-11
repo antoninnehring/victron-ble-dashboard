@@ -101,7 +101,7 @@ function DeviceStatus({ devices }: { devices: SystemOverview["devices"] }) {
   );
 }
 
-function BLESetupGuide() {
+function BLESetupGuide({ onRetry }: { onRetry: () => void }) {
   return (
     <div className="min-h-screen flex items-center justify-center p-8">
       <div className="max-w-lg bg-gray-900 border border-gray-800 rounded-2xl p-8 space-y-6">
@@ -152,6 +152,12 @@ function BLESetupGuide() {
             </p>
           </div>
         </div>
+        <button
+          onClick={onRetry}
+          className="px-4 py-2 bg-gray-800 hover:bg-gray-700 rounded-lg text-sm transition-colors"
+        >
+          Retry now
+        </button>
       </div>
     </div>
   );
@@ -164,7 +170,10 @@ export default function Home() {
 
   const fetchData = useCallback(async () => {
     try {
-      const res = await fetch("/api/vrm", { cache: "no-store" });
+      const res = await fetch("/api/vrm", {
+        cache: "no-store",
+        headers: { "Cache-Control": "no-cache" },
+      });
       const json = await res.json();
       if (json.error) {
         setError(json.error);
@@ -206,7 +215,7 @@ export default function Home() {
   }
 
   if (!data && error === "no-ble-data") {
-    return <BLESetupGuide />;
+    return <BLESetupGuide onRetry={fetchData} />;
   }
 
   if (!data) {

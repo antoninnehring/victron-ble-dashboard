@@ -86,9 +86,11 @@ final class VictronStore: ObservableObject {
 
     private init() {
         refresh()
-        timer = Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { [weak self] _ in
-            DispatchQueue.main.async { self?.refresh() }
+        let t = Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { [weak self] _ in
+            self?.refresh()
         }
+        RunLoop.main.add(t, forMode: .common)
+        timer = t
         watchFile()
 
         // Re-establish file watcher and refresh after sleep/wake
@@ -100,7 +102,9 @@ final class VictronStore: ObservableObject {
     }
 
     func refresh() {
-        data = VictronData.load()
+        if let loaded = VictronData.load() {
+            data = loaded
+        }
         lastRefresh = Date()
     }
 
@@ -111,14 +115,32 @@ final class VictronStore: ObservableObject {
         refresh()
     }
 
+    private func scheduleWatchRetry() {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
+            guard let self, self.fileSource == nil else { return }
+            self.watchFile()
+        }
+    }
+
     private func watchFile() {
         let path = BleDataFile.path
         let fd = open(path, O_EVTONLY)
-        guard fd >= 0 else { return }
+        guard fd >= 0 else {
+            scheduleWatchRetry()
+            return
+        }
         let source = DispatchSource.makeFileSystemObjectSource(
             fileDescriptor: fd, eventMask: [.write, .rename, .delete], queue: .main
         )
-        source.setEventHandler { [weak self] in self?.refresh() }
+        source.setEventHandler { [weak self] in
+            guard let self else { return }
+            let flags = source.data
+            self.refresh()
+            // Atomic replace invalidates this fd; re-open the new inode.
+            if flags.contains(.rename) || flags.contains(.delete) {
+                self.restartFileWatch()
+            }
+        }
         source.setCancelHandler { close(fd) }
         source.resume()
         fileSource = source
